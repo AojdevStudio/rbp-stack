@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Beads database (synced via JSONL)
+.beads/*.db
+.beads/*.db-wal
+.beads/*.db-shm
+
+# Research docs (not for public repo)
+rbp/docs/unified-claude-workflow-by-claude-ai.md
+rbp/docs/recursive-agentic-architecture-by-gemini.md
+
+# Marketing (keep separate)
+marketing/
