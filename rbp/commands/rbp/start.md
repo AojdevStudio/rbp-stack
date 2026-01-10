@@ -1,55 +1,37 @@
-# /rbp:start - Start Ralph Execution Loop
+---
+allowed-tools: Bash, Read
+description: Start the RBP autonomous execution loop
+argument-hint: [max-iterations]
+---
 
-Start the RBP autonomous execution loop on the current project.
+# /rbp:start
 
-## What This Does
+Start the RBP autonomous execution loop to implement tasks with test-gated verification.
 
-1. Checks prerequisites (beads, bun, claude)
-2. Queries `bd ready` for the next available task
-3. Executes the task via Claude Code
-4. Requires test verification before closing beads
-5. Repeats until all tasks complete or max iterations reached
+## Variables
 
-## Usage
+MAX_ITERATIONS: $1 (optional, default: 50)
+SCRIPTS_DIR: scripts/rbp
+PROGRESS_FILE: scripts/rbp/progress.txt
 
-Run this command when you have beads ready for execution.
+## Workflow
 
-## Prerequisites
+1. Run `bd status` to show current task state
+2. Run `bd ready` to display next available task
+3. If no tasks ready, report "No tasks available" and stop
+4. Confirm with user before starting execution loop
+5. Run `./`SCRIPTS_DIR`/ralph.sh `MAX_ITERATIONS`` to start the execution loop
+6. Monitor output for completion or errors
 
-- `.beads/` initialized (`bd init`)
-- Tasks created in beads (`bd create` or `parse-story-to-beads.sh`)
-- `bun` installed for running tests
-- Tests configured in `package.json`
+## Report
 
-## Execution
+RBP Execution Started
 
-```bash
-# Start with default 50 iterations
-./scripts/rbp/ralph.sh
+Status: Execution loop running
+Max Iterations: `MAX_ITERATIONS`
+Progress Log: `PROGRESS_FILE`
 
-# Start with custom iteration limit
-./scripts/rbp/ralph.sh 100
-```
-
-## During Execution
-
-The loop will:
-1. Display current task from `bd ready`
-2. Execute implementation via Claude Code
-3. Run `close-with-proof.sh` to verify tests pass
-4. Close the bead only if all tests pass
-5. Move to next task
-
-## Stopping the Loop
-
-- Press `Ctrl+C` to interrupt
-- The loop stops automatically when all tasks complete
-- Progress is saved to `scripts/rbp/progress.txt`
-
-## After Completion
-
-View final status with:
-```bash
-bd status
-bd list --closed
-```
+Monitor with:
+- `bd status` - Task overview
+- `tail -f `PROGRESS_FILE`` - Live progress
+- `Ctrl+C` - Stop execution

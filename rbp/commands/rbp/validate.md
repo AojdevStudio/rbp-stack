@@ -1,91 +1,56 @@
-# /rbp:validate - Validate RBP Installation
+---
+allowed-tools: Bash, Read
+description: Validate RBP Stack installation and configuration
+---
 
-Verify that the RBP Stack is properly installed and configured.
+# /rbp:validate
 
-## What This Checks
+Verify the RBP Stack is properly installed with all prerequisites, scripts, and configuration.
 
-1. **Prerequisites**
-   - `bd` (beads) command available
-   - `bun` command available
-   - `claude` CLI available
+## Variables
 
-2. **Directory Structure**
-   - `scripts/rbp/` exists with all scripts
-   - `.claude/commands/rbp/` exists with commands
-   - `.beads/` initialized
+SCRIPTS_DIR: scripts/rbp
+VALIDATOR: scripts/rbp/validate.sh
+CONFIG_FILE: rbp-config.yaml
 
-3. **Configuration**
-   - `rbp-config.yaml` exists and is valid
-   - `.claude/settings.json` has RBP hooks
+## Workflow
 
-4. **Test Infrastructure**
-   - `bun run test` command works
-   - `bun run typecheck` command works
+1. Check if `VALIDATOR` exists:
+   - If yes, run `./`VALIDATOR`` to perform full validation
+   - If no, perform manual checks (steps 2-5)
+2. Check prerequisites with `command -v`:
+   - `bd` (beads CLI)
+   - `bun` (JavaScript runtime)
+   - `claude` (Claude Code CLI)
+3. Check directory structure:
+   - `SCRIPTS_DIR` exists
+   - `.claude/commands/rbp/` exists
+   - `.beads/` exists
+4. Check configuration:
+   - `CONFIG_FILE` exists
+   - Read `CONFIG_FILE` to verify structure
+5. Report validation results with pass/fail for each check
 
-## Run Validation
+## Report
 
-```bash
-./scripts/rbp/validate.sh
-```
-
-## Expected Output
-
-```
-RBP Stack Validation
-═══════════════════════════════════════════════════════
+RBP Validation Complete
 
 Prerequisites:
-  [✓] bd (beads) installed
-  [✓] bun installed
-  [✓] claude CLI installed
+- [✓/✗] bd (beads)
+- [✓/✗] bun
+- [✓/✗] claude CLI
 
-Directory Structure:
-  [✓] scripts/rbp/ exists
-  [✓] .claude/commands/rbp/ exists
-  [✓] .beads/ initialized
-
-Scripts:
-  [✓] ralph.sh
-  [✓] prompt.md
-  [✓] close-with-proof.sh
-  [✓] sequencer.sh
-  [✓] parse-story-to-beads.sh
+Structure:
+- [✓/✗] `SCRIPTS_DIR`
+- [✓/✗] .claude/commands/rbp/
+- [✓/✗] .beads/
 
 Configuration:
-  [✓] rbp-config.yaml exists
-  [✓] hooks configured
+- [✓/✗] `CONFIG_FILE`
 
-═══════════════════════════════════════════════════════
-RBP Stack: READY
-═══════════════════════════════════════════════════════
-```
+Status: READY / ISSUES FOUND
 
-## Fixing Issues
-
-If validation fails:
-
-1. **Missing prerequisites**: Install the missing tool
-   ```bash
-   # Install beads (pick one)
-   brew install steveyegge/beads/bd
-   # or: curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash
-   # or: npm install -g @beads/bd
-
-   # Install bun
-   curl -fsSL https://bun.sh/install | bash
-   ```
-
-2. **Missing scripts**: Re-run installer
-   ```bash
-   /path/to/rbp/install.sh .
-   ```
-
-3. **Beads not initialized**: Initialize beads
-   ```bash
-   bd init
-   ```
-
-4. **Missing config**: Copy template
-   ```bash
-   cp /path/to/rbp/templates/rbp-config.yaml ./rbp-config.yaml
-   ```
+If issues found, recommend:
+- Missing tool: Install instructions
+- Missing directory: Re-run installer
+- Missing config: Copy from template

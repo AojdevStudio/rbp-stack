@@ -1,57 +1,43 @@
-# /rbp:status - Show RBP Status
+---
+allowed-tools: Bash, Read
+description: Show RBP execution status and task state
+---
 
-Display the current status of the RBP execution loop and beads state.
+# /rbp:status
 
-## What This Shows
+Display current RBP execution status including task progress, ready tasks, and recent activity.
 
-1. **Beads Status** - Open/closed tasks, progress percentage
-2. **Current Task** - Next task ready for execution
-3. **Recent Progress** - Last entries from progress log
-4. **Verification State** - Test pass/fail history
+## Variables
 
-## Commands to Run
+PROGRESS_FILE: scripts/rbp/progress.txt
+TAIL_LINES: 10
 
-### Quick Status
-```bash
-bd status
-```
+## Workflow
 
-### Detailed Task List
-```bash
-# All tasks
-bd list
+1. Run `bd status` to show task database overview
+2. Run `bd ready --limit 5` to show next available tasks
+3. Run `bd list --open` to show all open tasks
+4. Check if `PROGRESS_FILE` exists:
+   - If yes, run `tail -`TAIL_LINES` `PROGRESS_FILE`` to show recent progress
+   - If no, report "No progress log found"
+5. Summarize status: tasks complete, tasks remaining, next action
 
-# Open tasks only
-bd list --open
+## Report
 
-# Completed tasks
-bd list --closed
-```
+RBP Status
 
-### Progress History
-```bash
-# View progress log
-cat scripts/rbp/progress.txt
+Task Overview:
+- Total: [from bd status]
+- Open: [count]
+- Closed: [count]
+- Ready: [count]
 
-# Last 20 entries
-tail -20 scripts/rbp/progress.txt
-```
+Next Task: [from bd ready]
 
-### Task Tree (if parent/child structure)
-```bash
-bd tree
-```
+Recent Progress:
+[last TAIL_LINES lines from progress log]
 
-## Status Interpretation
-
-- **Ready tasks** = Available for execution
-- **In-progress** = Currently being worked on
-- **Closed** = Completed with verification proof
-- **Blocked** = Waiting on dependencies
-
-## Next Steps
-
-Based on status:
-- If tasks ready: Run `/rbp:start` or `./scripts/rbp/ralph.sh`
-- If all complete: Story is done, proceed to code review
-- If blocked: Resolve dependencies manually
+Recommended Action:
+- If tasks ready: `/rbp:start` or `./scripts/rbp/ralph.sh`
+- If all complete: Proceed to code review
+- If blocked: Resolve dependencies with `bd show <id>`
