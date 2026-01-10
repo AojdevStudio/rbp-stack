@@ -10,7 +10,19 @@ set -e
 # Configuration
 MAX_ITERATIONS=${1:-50}
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+RBP_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Auto-detect PROJECT_ROOT: prefer RBP_ROOT if it has beads (development mode),
+# otherwise use parent directory (installed mode)
+if [ -d "$RBP_ROOT/.beads" ]; then
+  PROJECT_ROOT="$RBP_ROOT"
+elif [ -d "$RBP_ROOT/../.beads" ]; then
+  PROJECT_ROOT="$(cd "$RBP_ROOT/.." && pwd)"
+else
+  # No beads found - assume installed mode (parent directory)
+  PROJECT_ROOT="$(cd "$RBP_ROOT/.." && pwd)"
+fi
+
 CONFIG_FILE="$PROJECT_ROOT/rbp-config.yaml"
 PROGRESS_FILE="$SCRIPT_DIR/progress.txt"
 

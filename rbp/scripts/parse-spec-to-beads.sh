@@ -64,11 +64,11 @@ echo -e "${YELLOW}Creating parent bead for spec...${NC}"
 # Extract problem statement as description
 DESCRIPTION=$(sed -n '/## Problem Statement/,/^## /p' "$SPEC_FILE" | grep -v "^##" | head -10 | tr '\n' ' ' | sed 's/  */ /g' | head -c 500)
 
-PARENT_BEAD=$(bd create "$SPEC_TITLE" --tag "spec" --tag "rbp" --note "$DESCRIPTION" 2>/dev/null || echo "")
+PARENT_BEAD=$(bd create "$SPEC_TITLE" -l "spec" -l "rbp" --notes "$DESCRIPTION" --silent 2>/dev/null || echo "")
 
 if [ -z "$PARENT_BEAD" ]; then
   echo -e "${RED}Failed to create parent bead${NC}"
-  PARENT_BEAD=$(bd create "$SPEC_TITLE" --tag "spec" 2>/dev/null || echo "$SPEC_ID")
+  PARENT_BEAD=$(bd create "$SPEC_TITLE" -l "spec" --silent 2>/dev/null || echo "$SPEC_ID")
 fi
 
 echo -e "${GREEN}Parent Bead:${NC} $PARENT_BEAD"
@@ -142,11 +142,11 @@ process_task() {
 
   # Create the bead
   if [ "$IS_UI" = "true" ]; then
-    BEAD_ID=$(bd create "$CURRENT_TASK" --parent "$TASK_PARENT" --tag "task" --tag "ui" --tag "requires-playwright" --note "$NOTE" 2>/dev/null || \
-              bd create "$CURRENT_TASK" --parent "$TASK_PARENT" 2>/dev/null || echo "")
+    BEAD_ID=$(bd create "$CURRENT_TASK" --parent "$TASK_PARENT" -l "task" -l "ui" -l "requires-playwright" --notes "$NOTE" --silent 2>/dev/null || \
+              bd create "$CURRENT_TASK" --parent "$TASK_PARENT" --silent 2>/dev/null || echo "")
   else
-    BEAD_ID=$(bd create "$CURRENT_TASK" --parent "$TASK_PARENT" --tag "task" --note "$NOTE" 2>/dev/null || \
-              bd create "$CURRENT_TASK" --parent "$TASK_PARENT" 2>/dev/null || echo "")
+    BEAD_ID=$(bd create "$CURRENT_TASK" --parent "$TASK_PARENT" -l "task" --notes "$NOTE" --silent 2>/dev/null || \
+              bd create "$CURRENT_TASK" --parent "$TASK_PARENT" --silent 2>/dev/null || echo "")
   fi
 
   if [ -n "$BEAD_ID" ]; then

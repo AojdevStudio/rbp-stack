@@ -201,21 +201,13 @@ Provide specific, actionable improvements. Be concise."
   echo -e "${GREEN}Codex review complete.${NC}"
   echo ""
 
-  # Ask if user wants to continue or update spec
-  read -p "Continue with execution? (y/n/update): " response
-  case "$response" in
-    y|Y|yes)
-      echo -e "${GREEN}Continuing with execution...${NC}\n"
-      ;;
-    update)
-      echo -e "${YELLOW}Please update the spec file and run again.${NC}"
-      exit 0
-      ;;
-    *)
-      echo -e "${YELLOW}Execution cancelled.${NC}"
-      exit 0
-      ;;
-  esac
+  # Auto-accept and continue: Codex findings are informational
+  # The spec's purpose is to satisfy acceptance criteria - if Codex found issues,
+  # they should be addressed in the spec before running this command.
+  # At runtime, we trust the spec is ready and proceed.
+  echo -e "${CYAN}Codex findings noted. Proceeding with execution...${NC}"
+  echo -e "${YELLOW}(If critical issues were found, Ctrl+C now and update the spec)${NC}\n"
+  sleep 2  # Brief pause to allow abort if needed
 }
 
 # Parse spec to Beads

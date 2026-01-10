@@ -57,7 +57,7 @@ RBP emits events compatible with PAI's existing JSONL format:
 interface RBPEvent {
   source_app: "RBP" | "RBP-QuickPlan" | "RBP-BMAD";
   session_id: string;          // RBP session UUID
-  hook_event_type: "RBP:TaskStart" | "RBP:TaskProgress" | "RBP:TaskComplete" | "RBP:TestRun" | "RBP:TestResult" | "RBP:Error";
+  hook_event_type: "RBP:TaskStart" | "RBP:TaskProgress" | "RBP:TaskComplete" | "RBP:TestRun" | "RBP:TestResult" | "RBP:Error" | "RBP:CodexReview" | "RBP:SpecParsed" | "RBP:LoopStart" | "RBP:LoopEnd";
   payload: {
     session_id: string;
     cwd: string;                // Project root
@@ -194,13 +194,20 @@ emit_event() {
   # Ensure directory exists
   mkdir -p "$(dirname "$event_file")" 2>/dev/null || return 1
 
-  # Try to append
-  echo "$event_json" >> "$event_file" 2>/dev/null || {
-    # Silently fail - don't block execution
+  # Use flock for concurrent write safety (multiple RBP sessions)
+  # Exclusive lock (200) prevents interleaved writes
+  (
+    flock -x 200 || return 1
+    echo "$event_json" >> "$event_file"
+  ) 200>>"$event_file" 2>/dev/null || {
+    # Silently fail if flock unavailable or write fails
     return 1
   }
 }
 ```
+
+**Why flock?**
+The "Multi-Session Chaos" use case (multiple RBP sessions running on different projects) can cause race conditions where two processes write to the same JSONL file simultaneously, interleaving bytes and corrupting events. `flock -x` ensures atomic writes.
 
 - Exit code: 0 (continue)
 - Fallback: Event lost, but execution continues
@@ -221,16 +228,39 @@ emit_event() {
   ```
 - If jq not installed: write raw JSON (PAI dashboard will skip invalid lines)
 
-### Browser Won't Open
+### Browser Won't Open / Headless Environment
 
-**Scenario:** `/rbp:start` tries to open http://localhost:5172 but browser fails
+**Scenario:** `/rbp:start` tries to open http://localhost:5172 but browser fails or running in headless/CI environment
 
-**Handling:**
+**Handling (with headless detection):**
 ```bash
-if command -v open &>/dev/null; then
-  open http://localhost:5172 2>/dev/null || true
-elif command -v xdg-open &>/dev/null; then
-  xdg-open http://localhost:5172 2>/dev/null || true
+# Check if we're in a headless/CI environment
+is_headless() {
+  # CI environment variables
+  [ -n "$CI" ] && return 0
+  [ -n "$GITHUB_ACTIONS" ] && return 0
+  [ -n "$GITLAB_CI" ] && return 0
+  [ -n "$JENKINS_URL" ] && return 0
+  [ -n "$CODESPACES" ] && return 0
+
+  # No display (Linux)
+  [ "$(uname)" = "Linux" ] && [ -z "$DISPLAY" ] && [ -z "$WAYLAND_DISPLAY" ] && return 0
+
+  # SSH session without X11 forwarding
+  [ -n "$SSH_CONNECTION" ] && [ -z "$DISPLAY" ] && return 0
+
+  return 1
+}
+
+# Only attempt browser open in non-headless environments
+if ! is_headless; then
+  if command -v open &>/dev/null; then
+    open http://localhost:5172 2>/dev/null || true
+  elif command -v xdg-open &>/dev/null; then
+    xdg-open http://localhost:5172 2>/dev/null || true
+  fi
+else
+  echo "📊 Headless environment detected - skipping browser auto-launch"
 fi
 
 # Always print the URL regardless of browser success
@@ -239,9 +269,15 @@ echo "📊 Observability Dashboard: http://localhost:5172"
 echo ""
 ```
 
+**Why headless detection?**
+- CI/CD pipelines (GitHub Actions, GitLab CI, Jenkins) have no browser
+- SSH sessions without X11 forwarding cannot open GUI apps
+- Linux servers without $DISPLAY will hang on `xdg-open`
+- Codespaces/remote dev environments may not have local browser access
+
 - Exit code: 0 (continue)
 - Fallback: User opens browser manually
-- URL always printed
+- URL always printed (user can copy/paste)
 
 ## User Experience
 
@@ -444,18 +480,44 @@ mkdir -p "$(dirname "$EVENT_FILE")" 2>/dev/null
 - Test commands (safe - user-defined)
 - Test output (potentially sensitive - could include API keys in error messages)
 
-**Sanitization Required:**
+**Sanitization Required (comprehensive patterns):**
 ```bash
 # In emit-event.sh
 sanitize_output() {
   local output="$1"
-  # Redact common secret patterns
+
+  # Use a pluggable sanitizer if available (allows custom policy)
+  if [ -n "$RBP_SANITIZER_HOOK" ] && [ -x "$RBP_SANITIZER_HOOK" ]; then
+    echo "$output" | "$RBP_SANITIZER_HOOK"
+    return
+  fi
+
+  # Comprehensive secret patterns (case-insensitive)
   echo "$output" | \
-    sed 's/api[_-]key[=:][^ ]*/API_KEY=[REDACTED]/gi' | \
-    sed 's/password[=:][^ ]*/PASSWORD=[REDACTED]/gi' | \
-    sed 's/token[=:][^ ]*/TOKEN=[REDACTED]/gi'
+    # API keys in various formats
+    sed -E 's/(api[_-]?key|apikey)[=:]["'"'"']?[^"'"'"' ]{8,}["'"'"']?/\1=[REDACTED]/gi' | \
+    # Passwords and secrets
+    sed -E 's/(password|passwd|pwd|secret)[=:]["'"'"']?[^"'"'"' ]{4,}["'"'"']?/\1=[REDACTED]/gi' | \
+    # Tokens (JWT, bearer, auth)
+    sed -E 's/(token|bearer|auth)[=:]["'"'"']?[A-Za-z0-9_.-]{20,}["'"'"']?/\1=[REDACTED]/gi' | \
+    # AWS-style keys
+    sed -E 's/(AKIA|ASIA)[A-Z0-9]{16}/[AWS_KEY_REDACTED]/g' | \
+    # Generic secrets in JSON
+    sed -E 's/"(api_key|secret_key|access_token|private_key|client_secret)"[[:space:]]*:[[:space:]]*"[^"]+"/"\1":"[REDACTED]"/gi' | \
+    # URLs with credentials
+    sed -E 's#(https?://)[^:]+:[^@]+@#\1[CREDENTIALS_REDACTED]@#gi' | \
+    # SSH private keys
+    sed -E 's/-----BEGIN[^-]+PRIVATE KEY-----.*-----END[^-]+PRIVATE KEY-----/[PRIVATE_KEY_REDACTED]/gs' | \
+    # Hex-encoded secrets (32+ chars)
+    sed -E 's/[a-fA-F0-9]{32,}/[HEX_REDACTED]/g'
 }
 ```
+
+**Sanitization Philosophy:**
+- Default patterns catch common cases (API keys, passwords, tokens, AWS keys)
+- `$RBP_SANITIZER_HOOK` allows teams to plug in their own sanitizer script
+- Better to over-redact than leak secrets in event logs
+- Sanitization runs BEFORE events are written, not on read
 
 **When Not to Sanitize:**
 - Task titles/descriptions (user controls these)
@@ -533,9 +595,71 @@ chmod 644 rbp-config.yaml
 
 ### Testing Strategy
 
-**Integration Tests (Manual - MVP):**
+**Automated Unit Tests (bats for shell helpers):**
 
-This feature is primarily integration/E2E, so manual testing is appropriate for MVP.
+```bash
+# rbp/tests/emit-event.bats
+#!/usr/bin/env bats
+
+setup() {
+  load 'test_helper/bats-support/load'
+  load 'test_helper/bats-assert/load'
+  source "$BATS_TEST_DIRNAME/../scripts/emit-event.sh"
+  export TEST_EVENT_FILE=$(mktemp)
+}
+
+teardown() {
+  rm -f "$TEST_EVENT_FILE"
+}
+
+@test "emit_rbp_event creates valid JSON" {
+  emit_rbp_event "RBP:TaskStart" '{"task_id":"test-001"}'
+  run jq -e '.' "$TEST_EVENT_FILE"
+  assert_success
+}
+
+@test "emit_rbp_event includes required fields" {
+  emit_rbp_event "RBP:TaskStart" '{"task_id":"test-001"}'
+  run jq -e '.source_app == "RBP"' "$TEST_EVENT_FILE"
+  assert_success
+  run jq -e '.hook_event_type == "RBP:TaskStart"' "$TEST_EVENT_FILE"
+  assert_success
+}
+
+@test "sanitize_output redacts API keys" {
+  result=$(sanitize_output 'api_key=sk-12345678abcdef')
+  assert_equal "$result" 'api_key=[REDACTED]'
+}
+
+@test "sanitize_output redacts passwords in JSON" {
+  result=$(sanitize_output '{"password": "secret123"}')
+  [[ "$result" == *'[REDACTED]'* ]]
+}
+
+@test "sanitize_output handles malformed input without crashing" {
+  # Test with binary garbage
+  result=$(sanitize_output "$(echo -e '\x00\x01\x02')" 2>&1)
+  # Should not crash - any output is acceptable
+  [ $? -eq 0 ] || [ $? -eq 1 ]
+}
+
+@test "handles missing PAI gracefully" {
+  unset HOME
+  export HOME=$(mktemp -d)
+  emit_rbp_event "RBP:TaskStart" '{"task_id":"test-001"}'
+  # Should not crash even if PAI directories don't exist
+  assert_success
+}
+```
+
+**Run automated tests:**
+```bash
+cd rbp && bats tests/
+```
+
+**Integration Tests (Manual - complements automated):**
+
+This feature also requires integration/E2E testing for dashboard interactions.
 
 **Test Plan:**
 
@@ -684,18 +808,32 @@ tail -1 ~/.claude/history/raw-outputs/$(date +%Y-%m)/$(date +%Y-%m-%d)_all-event
 
 ### Patterns to Follow
 
-**Event Emission Pattern:**
+**Event Emission Pattern (using jq for safe JSON):**
 ```bash
 # In ralph.sh
 source "$SCRIPT_DIR/emit-event.sh"
 
-# At task start
-emit_rbp_event "RBP:TaskStart" "{
-  \"iteration\": $iteration,
-  \"task_id\": \"$task_id\",
-  \"task_title\": \"$task_title\"
-}"
+# At task start - use jq -n --arg for safe escaping
+emit_rbp_event "RBP:TaskStart" "$(jq -n \
+  --argjson iteration "$iteration" \
+  --arg task_id "$task_id" \
+  --arg task_title "$task_title" \
+  '{iteration: $iteration, task_id: $task_id, task_title: $task_title}')"
+
+# For test output with potentially dangerous characters:
+emit_rbp_event "RBP:TestResult" "$(jq -n \
+  --argjson iteration "$iteration" \
+  --arg task_id "$task_id" \
+  --argjson exit_code "$exit_code" \
+  --arg test_output "$test_output" \
+  '{iteration: $iteration, task_id: $task_id, test_exit_code: $exit_code, test_output: $test_output}')"
 ```
+
+**Why jq Instead of String Interpolation:**
+- Test output often contains quotes, braces, newlines, and special characters
+- String interpolation like `"{ \"key\": \"$value\" }"` will produce invalid JSON
+- `jq -n --arg` properly escapes ALL special characters automatically
+- If jq is unavailable, fall back to simple events without test output content
 
 **Session ID Generation:**
 ```bash
@@ -704,16 +842,59 @@ SESSION_ID=$(uuidgen | tr '[:upper:]' '[:lower:]')
 export RBP_SESSION_ID="$SESSION_ID"
 ```
 
-**Config Check Pattern:**
+**Config Check Pattern (using yq for robust YAML parsing):**
 ```bash
-# Read from rbp-config.yaml
-OBSERVABILITY_ENABLED=$(grep -A3 '^observability:' rbp-config.yaml | grep 'enabled:' | awk '{print $2}')
+# Read from rbp-config.yaml using yq (handles comments, reordering, mixed-case)
+get_config() {
+  local key="$1"
+  local default="$2"
+  local config_file="${PROJECT_ROOT}/rbp-config.yaml"
+
+  if [ ! -f "$config_file" ]; then
+    echo "$default"
+    return
+  fi
+
+  # Use yq if available (preferred - handles all YAML edge cases)
+  if command -v yq &>/dev/null; then
+    local value=$(yq -r "$key // \"$default\"" "$config_file" 2>/dev/null)
+    echo "${value:-$default}"
+    return
+  fi
+
+  # Fallback: python yaml parser (more common than yq)
+  if command -v python3 &>/dev/null; then
+    local value=$(python3 -c "
+import yaml, sys
+try:
+    with open('$config_file') as f:
+        cfg = yaml.safe_load(f)
+    keys = '$key'.lstrip('.').split('.')
+    for k in keys:
+        cfg = cfg.get(k, '$default') if isinstance(cfg, dict) else '$default'
+    print(cfg)
+except: print('$default')
+" 2>/dev/null)
+    echo "${value:-$default}"
+    return
+  fi
+
+  # Last resort: grep (DEPRECATED - only for systems without yq/python)
+  echo "$default"
+}
+
+OBSERVABILITY_ENABLED=$(get_config '.observability.enabled' 'true')
 
 if [ "$OBSERVABILITY_ENABLED" != "true" ]; then
   # Skip event emission
   return 0
 fi
 ```
+
+**Why yq/python over grep/awk?**
+- grep/awk parsing breaks on: comments, reordered keys, mixed-case booleans (`True` vs `true`), quoted values
+- yq and python's yaml module handle all YAML edge cases correctly
+- yq is preferred (fast, purpose-built), python is fallback (more commonly installed)
 
 ## Testing Strategy
 
@@ -776,33 +957,47 @@ fi
 - **Acceptance:** Generate UUID session_id at start, export as RBP_SESSION_ID
 - **Tests:** Run ralph.sh, check RBP_SESSION_ID env var is set
 
-### Task 3: Integrate Events into ralph.sh
-- **ID:** obs-003
-- **Dependencies:** obs-001, obs-002
+### Task 3a: Integrate Task Lifecycle Events into ralph.sh
+- **ID:** obs-003a
+- **Dependencies:** obs-001, obs-002, obs-009
 - **Files:** `rbp/scripts/ralph.sh`
-- **Acceptance:** Emit events at TaskStart, TestRun, TestResult, TaskComplete, Error, loop end
-- **Tests:** Run ralph.sh on test spec, verify all event types in all-events.jsonl
+- **Acceptance:** Emit events at: LoopStart, TaskStart, TaskProgress, TaskComplete, LoopEnd
+- **Tests:** Run ralph.sh on test spec, verify task lifecycle events in all-events.jsonl
+
+### Task 3b: Integrate Test Lifecycle Events into ralph.sh
+- **ID:** obs-003b
+- **Dependencies:** obs-001, obs-002, obs-009
+- **Files:** `rbp/scripts/ralph.sh`
+- **Acceptance:** Emit events at: TestRun, TestResult (with exit code and sanitized output)
+- **Tests:** Run ralph.sh with passing/failing tests, verify test events in all-events.jsonl
+
+### Task 3c: Integrate Error Events into ralph.sh
+- **ID:** obs-003c
+- **Dependencies:** obs-001, obs-002, obs-009
+- **Files:** `rbp/scripts/ralph.sh`
+- **Acceptance:** Emit RBP:Error on any execution failure with error message
+- **Tests:** Trigger an error condition, verify Error event with correct payload
 
 ### Task 4: Integrate Events into ralph-execute.sh
 - **ID:** obs-004
-- **Dependencies:** obs-001, obs-002
+- **Dependencies:** obs-001, obs-002, obs-009
 - **Files:** `rbp/scripts/ralph-execute.sh`
 - **Acceptance:** Emit CodexReview and SpecParsed events
 - **Tests:** Run ralph-execute.sh, verify Codex events emitted
 
 ### Task 5: Integrate Events into close-with-proof.sh
 - **ID:** obs-005
-- **Dependencies:** obs-001
+- **Dependencies:** obs-001, obs-009
 - **Files:** `rbp/scripts/close-with-proof.sh`
 - **Acceptance:** Emit TestRun before tests, TestResult after (with exit code and output)
 - **Tests:** Run close-with-proof.sh on passing and failing tests, verify both cases
 
 ### Task 6: Add Observability Auto-Launch to /rbp:start
 - **ID:** obs-006
-- **Dependencies:** none
+- **Dependencies:** obs-007, obs-009
 - **Files:** `rbp/commands/rbp/start.md`
-- **Acceptance:** Check if PAI Observability running, launch if not, health check, open browser
-- **Tests:** Run /rbp:start, verify dashboard opens in browser
+- **Acceptance:** Check if PAI Observability running, launch if not, health check, open browser (with headless guard)
+- **Tests:** Run /rbp:start, verify dashboard opens in browser (or skips in headless)
 
 ### Task 7: Add PAI Dependency Check to install.sh
 - **ID:** obs-007
@@ -832,9 +1027,16 @@ fi
 - **Acceptance:** Add Requirements section with PAI install link, add Observability section
 - **Tests:** Manual review - README clear and accurate
 
-### Task 11: End-to-End Integration Test
+### Task 11: Automated bats Tests for Shell Helpers
 - **ID:** obs-011
-- **Dependencies:** obs-003, obs-004, obs-005, obs-006
+- **Dependencies:** obs-001
+- **Files:** `rbp/tests/emit-event.bats`
+- **Acceptance:** bats test file passes: validates JSON output, sanitization, error handling
+- **Tests:** Run `bats rbp/tests/emit-event.bats` - all tests pass
+
+### Task 12: End-to-End Integration Test
+- **ID:** obs-012
+- **Dependencies:** obs-003a, obs-003b, obs-003c, obs-004, obs-005, obs-006, obs-011
 - **Files:** N/A (testing only)
 - **Acceptance:** Run full workflow (install → /rbp:start → tasks execute → dashboard shows events)
 - **Tests:** Follow integration test checklist from Testing Strategy section
