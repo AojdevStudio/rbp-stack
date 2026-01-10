@@ -213,6 +213,9 @@ curl -fsSL https://bun.sh/install | bash
 
 # Claude Code CLI (one-time global install)
 # https://claude.ai/download
+
+# PAI Observability (optional, for real-time monitoring dashboard)
+# https://github.com/danielmiessler/Personal_AI_Infrastructure.git
 ```
 
 ### Install
@@ -454,12 +457,13 @@ rbp/
 │   ├── ralph.sh              # Main execution loop
 │   ├── ralph-execute.sh      # Quick-plan execution (with Codex review)
 │   ├── close-with-proof.sh   # Test-gated closure (THE GATEKEEPER)
+│   ├── emit-event.sh         # PAI Observability event emitter
 │   ├── parse-story-to-beads.sh  # BMAD Story → Beads conversion
 │   ├── parse-spec-to-beads.sh   # Quick-plan Spec → Beads conversion
 │   ├── sequencer.sh          # Phase grouping for large stories
 │   └── ...
 ├── commands/rbp/
-│   ├── start.md              # /rbp:start command
+│   ├── start.md              # /rbp:start command (with dashboard auto-launch)
 │   ├── status.md             # /rbp:status command
 │   └── validate.md           # /rbp:validate command
 ├── templates/
@@ -506,6 +510,74 @@ codex:
   model: "gpt-5-codex"
   reasoning_effort: "high"
   skip_by_default: false       # Set true to skip review by default
+
+observability:
+  enabled: true                # Emit events to PAI dashboard
+  auto_launch: true            # Auto-start dashboard with /rbp:start
+```
+
+<br />
+
+---
+
+<br />
+
+## Observability
+
+RBP integrates with [PAI (Personal AI Infrastructure)](https://github.com/danielmiessler/Personal_AI_Infrastructure.git) for real-time observability of task execution.
+
+### What You Get
+
+| Feature | Description |
+|:--------|:------------|
+| **Real-time Dashboard** | Watch task progress in your browser |
+| **Event Stream** | See RBP:TaskStart, RBP:TestRun, RBP:TestResult events live |
+| **Debug Visibility** | Trace through test failures and errors |
+| **Multi-Session Support** | Run multiple RBP sessions with distinct session IDs |
+
+### Setup
+
+```bash
+# 1. Install PAI (if not already installed)
+git clone https://github.com/danielmiessler/Personal_AI_Infrastructure.git ~/PAI
+cd ~/PAI && ./install.sh
+
+# 2. RBP auto-detects PAI and emits events automatically
+# Events are written to: ~/.claude/history/raw-outputs/YYYY-MM/YYYY-MM-DD_all-events.jsonl
+
+# 3. Launch dashboard with /rbp:start or manually:
+~/.claude/skills/Observability/manage.sh start
+# Dashboard: http://localhost:5172
+```
+
+### Event Types
+
+| Event | Emitted When |
+|:------|:-------------|
+| `RBP:LoopStart` | Ralph begins execution |
+| `RBP:TaskStart` | A task is picked from `bd ready` |
+| `RBP:TaskProgress` | Task status changes (executing, iteration_complete) |
+| `RBP:TaskComplete` | Task closed with proof |
+| `RBP:TestRun` | Tests are about to run |
+| `RBP:TestResult` | Tests complete (includes exit code, output) |
+| `RBP:Error` | An error occurred |
+| `RBP:CodexReview` | Codex pre-flight review starts/completes |
+| `RBP:SpecParsed` | Spec parsed to Beads |
+| `RBP:LoopEnd` | Ralph loop completes |
+
+### Without PAI
+
+RBP works without PAI — observability events are simply not emitted. You can still monitor progress via:
+
+```bash
+# File-based logs
+tail -f scripts/rbp/progress.txt
+
+# Beads activity
+bd activity --follow
+
+# Task status
+bd status
 ```
 
 <br />
@@ -565,7 +637,7 @@ Now I give it an Epic and walk away. Come back to verified, working code.
 - [x] Codex pre-flight review integration
 - [x] UI auto-detection (Playwright)
 - [x] Execution sequencer for large stories
-- [ ] Real-time progress dashboard
+- [x] Real-time progress dashboard (PAI Observability integration)
 - [ ] Parallel task execution
 - [ ] Integration with more test frameworks
 
