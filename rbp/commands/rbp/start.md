@@ -1,8 +1,7 @@
 ---
-allowed-tools: Bash, Read, Glob, AskUserQuestion
+allowed-tools: Bash, Read, Glob, AskUserQuestion, Write
 description: Start the RBP autonomous execution loop
 argument-hint: [spec-file | max-iterations]
-context: fork
 ---
 
 # /rbp:start
