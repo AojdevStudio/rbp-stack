@@ -11,6 +11,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET_DIR="${1:-.}"
 TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
+VERSION=$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null || echo "2.0.0")
 
 # Colors
 RED='\033[0;31m'
@@ -22,7 +23,7 @@ NC='\033[0m'
 print_banner() {
   echo -e "${CYAN}"
   echo "╔═══════════════════════════════════════════════════════════╗"
-  echo "║              RBP Stack Installer v2.0                     ║"
+  echo "║              RBP Stack Installer v${VERSION}                     ║"
   echo "║         Ralph + Beads + PAI Integration                   ║"
   echo "╚═══════════════════════════════════════════════════════════╝"
   echo -e "${NC}"
