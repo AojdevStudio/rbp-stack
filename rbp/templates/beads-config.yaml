@@ -1,0 +1,60 @@
+# Beads Configuration for RBP Stack
+# This file configures beads behavior for the RBP execution loop
+# Place in .beads/config.yaml after running bd init
+
+# Default tags for new beads
+defaults:
+  tags:
+    - "rbp"
+
+# Tag definitions for RBP workflow
+tags:
+  story:
+    description: "Parent bead representing a BMAD story"
+    color: "blue"
+
+  subtask:
+    description: "Child bead representing a story subtask"
+    color: "green"
+
+  ui:
+    description: "UI-related task requiring visual verification"
+    color: "purple"
+
+  requires-playwright:
+    description: "Task requires Playwright test verification"
+    color: "orange"
+
+  verified:
+    description: "Task completed with test verification proof"
+    color: "green"
+
+  blocked:
+    description: "Task blocked by dependency or issue"
+    color: "red"
+
+# Workflow states
+states:
+  - open
+  - in_progress
+  - blocked
+  - closed
+
+# Closure requirements
+closure:
+  # Require note when closing (used for verification proof)
+  require_note: false
+
+  # Custom closure validation (could integrate with RBP scripts)
+  # validate_command: "scripts/rbp/close-with-proof.sh"
+
+# Display preferences
+display:
+  # Show tree structure by default
+  default_view: "tree"
+
+  # Sort by priority
+  sort_by: "priority"
+
+  # Show tags in list view
+  show_tags: true

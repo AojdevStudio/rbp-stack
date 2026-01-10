@@ -1,0 +1,131 @@
+# RBP Stack Configuration Example
+# ================================
+# Copy to rbp-config.yaml and customize for your project
+#
+# The RBP Stack (Ralph + Beads + PAI) enables autonomous Epic implementation
+# with test-gated verification to prevent lying agents.
+
+project:
+  # Your project name (used in logs and progress tracking)
+  name: "your-project-name"
+
+  # Brief description of what you're building
+  description: "Autonomous Epic implementation with BMAD + Beads"
+
+paths:
+  # Where your BMAD stories live (created by /bmad:bmm:workflows:create-story)
+  stories: "docs/bmm/implementation-artifacts/stories"
+
+  # Where beads state is stored (will be created by bd init if missing)
+  beads: ".beads"
+
+  # Where RBP scripts are installed (by install.sh)
+  scripts: "scripts/rbp"
+
+  # Where slash commands are installed (by install.sh)
+  commands: ".claude/commands/rbp"
+
+execution:
+  # Maximum Ralph loop iterations before stopping
+  # Increase for larger stories, decrease for quick iterations
+  max_iterations: 50
+
+  # Subtasks per execution phase (for large tasks)
+  # The Execution Sequencer groups subtasks into manageable phases
+  phase_size: 5
+
+  # Pause between iterations (seconds)
+  # Allows time for file system sync and reduces API rate limiting
+  iteration_delay: 2
+
+verification:
+  # CRITICAL: Require bun test to pass before closing beads
+  # This is the primary defense against lying agents
+  require_tests: true
+
+  # Auto-detect UI stories and require Playwright verification
+  # UI tasks get additional visual verification layer
+  require_playwright_for_ui: true
+
+  # Test commands (adjust for your project's setup)
+  test_command: "bun run test"
+  typecheck_command: "bun run typecheck"
+  playwright_command: "bunx playwright test"
+
+# UI Detection Configuration
+# Stories matching these keywords in acceptance criteria
+# will automatically require Playwright verification
+ui_detection:
+  enabled: true
+  keywords:
+    - "UI"
+    - "component"
+    - "visual"
+    - "browser"
+    - "render"
+    - "display"
+    - "click"
+    - "button"
+    - "form"
+    - "modal"
+    - "sidebar"
+    - "header"
+    - "page"
+    - "screen"
+    - "responsive"
+    - "mobile"
+    - "desktop"
+    - "layout"
+    - "style"
+    - "CSS"
+    - "frontend"
+
+# BMAD Integration
+# Command paths for BMAD workflows (adjust if your BMAD installation differs)
+bmad:
+  # Create a new story from Epic requirements
+  create_story: "/bmad:bmm:workflows:create-story"
+
+  # Developer workflow for implementing stories
+  dev_story: "/bmad:bmm:workflows:dev-story"
+
+  # Code review workflow after story completion
+  code_review: "/bmad:bmm:workflows:code-review"
+
+# Hooks Configuration Reference
+# These are configured in .claude/settings.json
+# Shown here for documentation purposes
+hooks:
+  # SessionStart: Display current task when opening Claude Code
+  session_start:
+    - "bd prime 2>/dev/null || true"
+    - "scripts/rbp/show-active-task.sh"
+
+  # PreCompact: Save progress before context compaction
+  pre_compact:
+    - "scripts/rbp/save-progress-to-beads.sh"
+
+# -------------------------------------------------------------------
+# Quick Start Guide
+# -------------------------------------------------------------------
+#
+# 1. Install RBP Stack:
+#    ./rbp/install.sh /path/to/your/project
+#
+# 2. Validate installation:
+#    ./scripts/rbp/validate.sh
+#
+# 3. Create a story (requires BMAD):
+#    /bmad:bmm:workflows:create-story
+#
+# 4. Convert story to beads:
+#    ./scripts/rbp/parse-story-to-beads.sh docs/bmm/.../story-001.md
+#
+# 5. Start autonomous execution:
+#    ./scripts/rbp/ralph.sh
+#
+# 6. Monitor progress:
+#    bd status
+#    tail -f scripts/rbp/progress.txt
+#
+# -------------------------------------------------------------------
