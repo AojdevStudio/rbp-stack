@@ -12,6 +12,16 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# Generate session ID for observability (share with Ralph)
+RBP_SESSION_ID=$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]' || echo "ralph-exec-$$-$(date +%s)")
+export RBP_SESSION_ID
+export RBP_SOURCE_APP="RBP-QuickPlan"
+
+# Source event emitter for observability
+if [ -f "$SCRIPT_DIR/emit-event.sh" ]; then
+  source "$SCRIPT_DIR/emit-event.sh"
+fi
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -173,6 +183,9 @@ run_codex_review() {
   local reasoning="${CODEX_REASONING:-high}"
   echo -e "${CYAN}Running $model review on spec (reasoning: $reasoning)...${NC}\n"
 
+  # Emit Codex review start event
+  emit_codex_review "start" "$SPEC_FILE" "" 2>/dev/null || true
+
   local review_prompt="Review this implementation spec for:
 1. Missing edge cases that could cause bugs
 2. Wrong technical approaches or anti-patterns
@@ -188,18 +201,25 @@ $(cat "$SPEC_FILE")
 Provide specific, actionable improvements. Be concise."
 
   # Run Codex in read-only mode with configured settings
-  echo "$review_prompt" | codex exec --skip-git-repo-check \
+  local review_output
+  review_output=$(echo "$review_prompt" | codex exec --skip-git-repo-check \
     -m "$model" \
     --config model_reasoning_effort="$reasoning" \
     --sandbox read-only \
-    2>/dev/null || {
+    2>&1) || {
       echo -e "${YELLOW}Codex review failed or unavailable. Continuing without review.${NC}"
+      emit_codex_review "failed" "$SPEC_FILE" "Codex unavailable or failed" 2>/dev/null || true
       return 0
     }
 
+  echo "$review_output"
   echo ""
   echo -e "${GREEN}Codex review complete.${NC}"
   echo ""
+
+  # Emit Codex review complete event (truncate findings for event)
+  local findings_summary=$(echo "$review_output" | head -c 500 | tr '\n' ' ')
+  emit_codex_review "complete" "$SPEC_FILE" "$findings_summary" 2>/dev/null || true
 
   # Auto-accept and continue: Codex findings are informational
   # The spec's purpose is to satisfy acceptance criteria - if Codex found issues,
@@ -221,6 +241,15 @@ parse_spec_to_beads() {
 
   # Run the parser
   "$SCRIPT_DIR/parse-spec-to-beads.sh" "$SPEC_FILE"
+
+  # Count created tasks for observability event
+  local task_count=0
+  if command -v bd &>/dev/null; then
+    task_count=$(bd list --json 2>/dev/null | jq 'length' 2>/dev/null || echo "0")
+  fi
+
+  # Emit spec parsed event
+  emit_spec_parsed "$SPEC_FILE" "$task_count" 2>/dev/null || true
 
   echo ""
 }

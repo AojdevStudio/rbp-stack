@@ -12,6 +12,15 @@ MAX_ITERATIONS=${1:-50}
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RBP_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Generate session ID for observability
+RBP_SESSION_ID=$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]' || echo "ralph-$$-$(date +%s)")
+export RBP_SESSION_ID
+
+# Source event emitter for observability
+if [ -f "$SCRIPT_DIR/emit-event.sh" ]; then
+  source "$SCRIPT_DIR/emit-event.sh"
+fi
+
 # Auto-detect PROJECT_ROOT: prefer RBP_ROOT if it has beads (development mode),
 # otherwise use parent directory (installed mode)
 if [ -d "$RBP_ROOT/.beads" ]; then
@@ -25,6 +34,51 @@ fi
 
 CONFIG_FILE="$PROJECT_ROOT/rbp-config.yaml"
 PROGRESS_FILE="$SCRIPT_DIR/progress.txt"
+
+# Load observability configuration
+load_observability_config() {
+  # Default: enabled
+  RBP_OBSERVABILITY_ENABLED="true"
+
+  if [ ! -f "$CONFIG_FILE" ]; then
+    return
+  fi
+
+  # Use yq if available (preferred - handles all YAML edge cases)
+  if command -v yq &>/dev/null; then
+    local value=$(yq -r '.observability.enabled // "true"' "$CONFIG_FILE" 2>/dev/null)
+    if [ "$value" = "false" ]; then
+      RBP_OBSERVABILITY_ENABLED="false"
+    fi
+    return
+  fi
+
+  # Fallback: python yaml parser
+  if command -v python3 &>/dev/null; then
+    local value=$(python3 -c "
+import yaml
+try:
+    with open('$CONFIG_FILE') as f:
+        cfg = yaml.safe_load(f)
+    obs = cfg.get('observability', {})
+    print('false' if obs.get('enabled') == False else 'true')
+except: print('true')
+" 2>/dev/null)
+    if [ "$value" = "false" ]; then
+      RBP_OBSERVABILITY_ENABLED="false"
+    fi
+    return
+  fi
+
+  # Last resort: grep (limited but works for simple cases)
+  if grep -q 'enabled:[[:space:]]*false' "$CONFIG_FILE" 2>/dev/null; then
+    RBP_OBSERVABILITY_ENABLED="false"
+  fi
+}
+
+# Initialize observability
+load_observability_config
+export RBP_OBSERVABILITY_ENABLED
 
 # Colors for output
 RED='\033[0;31m'
@@ -152,11 +206,22 @@ run_iteration() {
     return 1
   fi
 
+  # Extract task ID and title for observability (using jq if available)
+  local task_id=""
+  local task_title=""
+  if command -v jq &>/dev/null; then
+    task_id=$(echo "$task" | jq -r '.id // "unknown"' 2>/dev/null || echo "unknown")
+    task_title=$(echo "$task" | jq -r '.title // "Untitled"' 2>/dev/null || echo "Untitled")
+  fi
+
   echo -e "${CYAN}Current Task:${NC}"
   echo "$task"
   echo ""
 
-  log_progress "Iteration $iteration: Starting task"
+  log_progress "Iteration $iteration: Starting task $task_id"
+
+  # Emit task start event
+  emit_task_start "$iteration" "$task_id" "$task_title" 2>/dev/null || true
 
   # Build the prompt with current task context
   local prompt=$(cat "$SCRIPT_DIR/prompt.md")
@@ -173,6 +238,9 @@ Execute this task following the RBP Protocol. When complete, use close-with-proo
   # Execute via Claude Code
   echo -e "${YELLOW}Executing via Claude Code...${NC}\n"
 
+  # Emit task progress event
+  emit_task_progress "$iteration" "$task_id" "executing" 2>/dev/null || true
+
   local output
   output=$(echo "$prompt" | claude --dangerously-skip-permissions 2>&1 | tee /dev/stderr) || true
 
@@ -180,6 +248,8 @@ Execute this task following the RBP Protocol. When complete, use close-with-proo
   if echo "$output" | grep -q "<rbp:complete/>"; then
     echo -e "\n${GREEN}Task marked complete with verification.${NC}"
     log_progress "Iteration $iteration: Task completed with verification"
+    # Emit task complete event
+    emit_task_complete "$iteration" "$task_id" "closed" 2>/dev/null || true
     return 0
   fi
 
@@ -187,10 +257,14 @@ Execute this task following the RBP Protocol. When complete, use close-with-proo
   if echo "$output" | grep -q "<rbp:error>"; then
     echo -e "\n${RED}Task encountered an error.${NC}"
     log_progress "Iteration $iteration: Task failed"
+    # Extract error message if possible
+    local error_msg=$(echo "$output" | grep -o '<rbp:error>[^<]*</rbp:error>' | sed 's/<[^>]*>//g' || echo "Unknown error")
+    emit_error "$iteration" "$task_id" "$error_msg" 2>/dev/null || true
     return 0  # Continue to next iteration
   fi
 
   log_progress "Iteration $iteration: Completed iteration"
+  emit_task_progress "$iteration" "$task_id" "iteration_complete" 2>/dev/null || true
   return 0
 }
 
@@ -203,9 +277,15 @@ main() {
   echo -e "${GREEN}Starting Ralph execution loop${NC}"
   echo -e "Max iterations: $MAX_ITERATIONS"
   echo -e "Project root: $PROJECT_ROOT"
+  if [ "$RBP_OBSERVABILITY_ENABLED" = "true" ]; then
+    echo -e "Observability: enabled (session: ${RBP_SESSION_ID:0:8}...)"
+  fi
   echo ""
 
   log_progress "=== Ralph session started ==="
+
+  # Emit loop start event
+  emit_loop_start 1 "$MAX_ITERATIONS" 2>/dev/null || true
 
   for i in $(seq 1 $MAX_ITERATIONS); do
     # Check if all tasks are complete before starting iteration
@@ -214,6 +294,8 @@ main() {
       echo -e "${GREEN}║              ALL TASKS COMPLETE!                      ║${NC}"
       echo -e "${GREEN}╚═══════════════════════════════════════════════════════╝${NC}"
       log_progress "=== All tasks complete at iteration $i ==="
+      # Emit loop end event
+      emit_loop_end "$i" "all_complete" 2>/dev/null || true
       exit 0
     fi
 
@@ -228,6 +310,8 @@ main() {
   echo -e "Run 'bd status' to see remaining tasks."
 
   log_progress "=== Reached max iterations ==="
+  # Emit loop end event
+  emit_loop_end "$MAX_ITERATIONS" "max_iterations_reached" 2>/dev/null || true
   exit 1
 }
 

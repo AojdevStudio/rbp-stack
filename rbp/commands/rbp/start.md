@@ -34,6 +34,39 @@ PROGRESS_FILE: scripts/rbp/progress.txt
 
 ## Workflow
 
+### Step 0: Launch PAI Observability Dashboard (if available)
+
+Before starting execution, check for PAI Observability integration:
+
+1. **Check if PAI Observability is installed:**
+   - Look for `~/.claude/skills/Observability/manage.sh`
+   - If not found: Print warning and continue without dashboard
+
+2. **Check if dashboard is already running:**
+   ```bash
+   curl -s http://localhost:4000/health 2>/dev/null
+   ```
+   - If running: Skip launch, just note it's available
+
+3. **Launch dashboard if not running:**
+   ```bash
+   ~/.claude/skills/Observability/manage.sh start
+   ```
+   - Wait up to 10 seconds for startup
+   - Verify with health check
+
+4. **Open browser (unless headless):**
+   - Check for CI/headless environment variables: `$CI`, `$GITHUB_ACTIONS`, `$GITLAB_CI`, `$JENKINS_URL`, `$CODESPACES`
+   - Check for SSH without display: `$SSH_CONNECTION` without `$DISPLAY`
+   - If not headless: Open http://localhost:5172 in browser
+
+5. **Always print dashboard URL:**
+   ```
+   Observability Dashboard: http://localhost:5172
+   ```
+
+### Main Workflow Steps
+
 1. Run `bd status` to show current task state
 2. Run `bd ready` to check for available tasks
 
@@ -70,12 +103,19 @@ PROGRESS_FILE: scripts/rbp/progress.txt
 ## Report
 
 RBP Execution Started
+═══════════════════════════════════════════════════════
+
+Observability Dashboard: http://localhost:5172
+   Showing real-time task progress, test results, and errors
+
+File Logs: scripts/rbp/progress.txt
 
 Status: Execution loop running in forked context
 Max Iterations: `MAX_ITERATIONS`
-Progress Log: `PROGRESS_FILE`
 
 Monitor with:
-- `bd status` - Task overview
-- `tail -f `PROGRESS_FILE`` - Live progress
-- `Ctrl+C` - Stop execution
+- Browser: http://localhost:5172 (live updates)
+- Terminal: tail -f `PROGRESS_FILE`
+- Beads: bd activity --follow
+- Tasks: bd status
+- Stop: Ctrl+C

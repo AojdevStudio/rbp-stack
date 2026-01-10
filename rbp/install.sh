@@ -75,6 +75,24 @@ check_prerequisites() {
     exit 1
   fi
 
+  # Check for PAI Observability (optional but recommended)
+  echo ""
+  print_step "Checking optional dependencies..."
+
+  if [ -d "$HOME/.claude/skills/Observability" ]; then
+    print_success "PAI Observability found (real-time dashboard available)"
+  else
+    echo -e "  ${YELLOW}PAI Observability not found - observability features will be limited${NC}"
+    echo -e "  ${YELLOW}Install PAI for real-time monitoring:${NC}"
+    echo -e "  ${CYAN}https://github.com/danielmiessler/Personal_AI_Infrastructure.git${NC}"
+    echo ""
+    read -p "  Continue without PAI? (y/n): " choice
+    if [ "$choice" != "y" ] && [ "$choice" != "Y" ]; then
+      echo -e "${YELLOW}Installation cancelled. Install PAI first.${NC}"
+      exit 1
+    fi
+  fi
+
   echo ""
 }
 
@@ -97,6 +115,9 @@ install_scripts() {
   cp "$SCRIPT_DIR/scripts/parse-spec-to-beads.sh" "$TARGET_DIR/scripts/rbp/"
   cp "$SCRIPT_DIR/scripts/ralph-execute.sh" "$TARGET_DIR/scripts/rbp/"
 
+  # Observability integration
+  cp "$SCRIPT_DIR/scripts/emit-event.sh" "$TARGET_DIR/scripts/rbp/"
+
   # Make scripts executable
   chmod +x "$TARGET_DIR/scripts/rbp/"*.sh
 
@@ -106,12 +127,22 @@ install_scripts() {
 
 # Step 3: Install commands
 install_commands() {
-  print_step "Installing slash commands to $TARGET_DIR/.claude/commands/rbp/..."
+  print_step "Installing slash commands to $TARGET_DIR/.claude/commands/..."
 
   mkdir -p "$TARGET_DIR/.claude/commands/rbp"
 
-  # Copy command files
+  # Copy RBP command files
   cp "$SCRIPT_DIR/commands/rbp/"*.md "$TARGET_DIR/.claude/commands/rbp/"
+
+  # Copy bundled quick-plan command (if not already present)
+  if [ -f "$SCRIPT_DIR/commands/quick-plan.md" ]; then
+    if [ ! -f "$TARGET_DIR/.claude/commands/quick-plan.md" ]; then
+      cp "$SCRIPT_DIR/commands/quick-plan.md" "$TARGET_DIR/.claude/commands/"
+      print_success "quick-plan command installed"
+    else
+      print_success "quick-plan command already exists (skipped)"
+    fi
+  fi
 
   print_success "Slash commands installed"
   echo ""

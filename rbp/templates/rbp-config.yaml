@@ -97,6 +97,17 @@ codex:
   # Skip review by default (can override with --skip-review)
   skip_by_default: false
 
+# Observability configuration (PAI Dashboard integration)
+observability:
+  # Enable event emission to PAI Observability Dashboard
+  enabled: true
+
+  # Auto-launch PAI Observability dashboard on /rbp:start
+  auto_launch: true
+
+  # Check if PAI is installed before starting (warn if missing)
+  pai_install_check: true
+
 # Hooks configuration (for reference - actual hooks go in .claude/settings.json)
 hooks:
   session_start:

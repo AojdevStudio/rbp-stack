@@ -15,6 +15,11 @@ REQUIRE_PLAYWRIGHT=false
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# Source event emitter for observability (inherit session from Ralph if available)
+if [ -f "$SCRIPT_DIR/emit-event.sh" ]; then
+  source "$SCRIPT_DIR/emit-event.sh"
+fi
+
 # Parse arguments
 for arg in "$@"; do
   case $arg in
@@ -52,11 +57,17 @@ PROOF_SUMMARY=""
 # Step 1: Run typecheck
 echo -e "${YELLOW}Step 1/3: Running typecheck...${NC}"
 
+# Emit test run event for typecheck
+emit_test_run 0 "$BEAD_ID" "bun run typecheck" 2>/dev/null || true
+
 # Capture both output and exit code (disable set -e temporarily)
 set +e
 TYPECHECK_OUTPUT=$(bun run typecheck 2>&1)
 TYPECHECK_EXIT_CODE=$?
 set -e
+
+# Emit test result event for typecheck
+emit_test_result 0 "$BEAD_ID" "$TYPECHECK_EXIT_CODE" "$TYPECHECK_OUTPUT" 2>/dev/null || true
 
 if [ $TYPECHECK_EXIT_CODE -eq 0 ]; then
   echo -e "${GREEN}Typecheck passed${NC}\n"
@@ -71,11 +82,17 @@ fi
 # Step 2: Run unit tests
 echo -e "${YELLOW}Step 2/3: Running tests...${NC}"
 
+# Emit test run event for unit tests
+emit_test_run 0 "$BEAD_ID" "bun run test" 2>/dev/null || true
+
 # Capture both output and exit code (disable set -e temporarily)
 set +e
 TEST_OUTPUT=$(bun run test 2>&1)
 TEST_EXIT_CODE=$?
 set -e
+
+# Emit test result event for unit tests
+emit_test_result 0 "$BEAD_ID" "$TEST_EXIT_CODE" "$TEST_OUTPUT" 2>/dev/null || true
 
 if [ $TEST_EXIT_CODE -eq 0 ]; then
   echo -e "${GREEN}Tests passed${NC}\n"
@@ -91,11 +108,17 @@ fi
 if [ "$REQUIRE_PLAYWRIGHT" = true ]; then
   echo -e "${YELLOW}Step 3/3: Running Playwright tests...${NC}"
 
+  # Emit test run event for Playwright
+  emit_test_run 0 "$BEAD_ID" "bunx playwright test" 2>/dev/null || true
+
   # Capture both output and exit code (disable set -e temporarily)
   set +e
   PLAYWRIGHT_OUTPUT=$(bunx playwright test 2>&1)
   PLAYWRIGHT_EXIT_CODE=$?
   set -e
+
+  # Emit test result event for Playwright
+  emit_test_result 0 "$BEAD_ID" "$PLAYWRIGHT_EXIT_CODE" "$PLAYWRIGHT_OUTPUT" 2>/dev/null || true
 
   if [ $PLAYWRIGHT_EXIT_CODE -eq 0 ]; then
     echo -e "${GREEN}Playwright tests passed${NC}\n"
