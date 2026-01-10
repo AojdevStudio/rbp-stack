@@ -9,6 +9,9 @@ paths:
   # Where your BMAD stories live
   stories: "docs/bmm/implementation-artifacts/stories"
 
+  # Where quick-plan specs are saved
+  specs: "specs"
+
   # Where beads state is stored (created by bd init)
   beads: ".beads"
 
@@ -71,6 +74,28 @@ bmad:
   create_story: "/bmad:bmm:workflows:create-story"
   dev_story: "/bmad:bmm:workflows:dev-story"
   code_review: "/bmad:bmm:workflows:code-review"
+
+# Quick-plan workflow configuration
+quick_plan:
+  # Slash command to create specs
+  command: "/quick-plan"
+
+  # Template for RBP-compatible specs
+  spec_template: "templates/spec-template.md"
+
+# Codex pre-flight review configuration
+codex:
+  # Enable Codex review before execution
+  enabled: true
+
+  # Codex model to use
+  model: "gpt-5-codex"
+
+  # Reasoning effort level (low, medium, high)
+  reasoning_effort: "high"
+
+  # Skip review by default (can override with --skip-review)
+  skip_by_default: false
 
 # Hooks configuration (for reference - actual hooks go in .claude/settings.json)
 hooks:

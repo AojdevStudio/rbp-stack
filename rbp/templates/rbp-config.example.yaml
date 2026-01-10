@@ -16,6 +16,9 @@ paths:
   # Where your BMAD stories live (created by /bmad:bmm:workflows:create-story)
   stories: "docs/bmm/implementation-artifacts/stories"
 
+  # Where quick-plan specs are saved (created by /quick-plan)
+  specs: "specs"
+
   # Where beads state is stored (will be created by bd init if missing)
   beads: ".beads"
 
@@ -92,6 +95,33 @@ bmad:
   # Code review workflow after story completion
   code_review: "/bmad:bmm:workflows:code-review"
 
+# Quick-Plan Integration
+# Alternative workflow for feature implementation via /quick-plan specs
+quick_plan:
+  # Slash command to create specs (interviews you, analyzes codebase)
+  command: "/quick-plan"
+
+  # Template for RBP-compatible specs (used by /quick-plan output)
+  spec_template: "templates/spec-template.md"
+
+# Codex Pre-Flight Review
+# Optional AI review of specs before execution (catches issues early)
+codex:
+  # Enable Codex review before ralph-execute.sh runs
+  # Set to false if you don't have Codex installed
+  enabled: true
+
+  # Codex model to use for review
+  model: "gpt-5-codex"
+
+  # Reasoning effort level: low, medium, high
+  # Higher = more thorough but slower
+  reasoning_effort: "high"
+
+  # Skip review by default (override with --skip-review flag)
+  # Set to true to speed up iteration during development
+  skip_by_default: false
+
 # Hooks Configuration Reference
 # These are configured in .claude/settings.json
 # Shown here for documentation purposes
@@ -115,17 +145,31 @@ hooks:
 # 2. Validate installation:
 #    ./scripts/rbp/validate.sh
 #
-# 3. Create a story (requires BMAD):
-#    /bmad:bmm:workflows:create-story
+# WORKFLOW A: BMAD Stories (structured)
+# -------------------------------------
+# 3a. Create a story (requires BMAD):
+#     /bmad:bmm:workflows:create-story
 #
-# 4. Convert story to beads:
-#    ./scripts/rbp/parse-story-to-beads.sh docs/bmm/.../story-001.md
+# 4a. Convert story to beads:
+#     ./scripts/rbp/parse-story-to-beads.sh docs/bmm/.../story-001.md
 #
-# 5. Start autonomous execution:
-#    ./scripts/rbp/ralph.sh
+# 5a. Start autonomous execution:
+#     ./scripts/rbp/ralph.sh
 #
-# 6. Monitor progress:
-#    bd status
-#    tail -f scripts/rbp/progress.txt
+# WORKFLOW B: Quick-Plan Specs (interview-driven)
+# -----------------------------------------------
+# 3b. Create a spec via interview:
+#     /quick-plan "add user authentication with JWT"
+#
+# 4b. Execute spec (with optional Codex review):
+#     ./scripts/rbp/ralph-execute.sh specs/add-user-authentication.md
+#     # Or skip Codex review:
+#     ./scripts/rbp/ralph-execute.sh specs/add-user-authentication.md --skip-review
+#
+# MONITORING (both workflows)
+# ---------------------------
+# bd status                    # Task overview
+# bd list --open              # Open tasks
+# tail -f scripts/rbp/progress.txt  # Live progress
 #
 # -------------------------------------------------------------------

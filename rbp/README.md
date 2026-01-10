@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/rbp-hero-banner.png" alt="RBP Stack - Stop trusting. Start verifying." width="800"/>
+<img src="docs/rbp-hero-banner.jpg" alt="RBP Stack - Stop trusting. Start verifying." width="800"/>
 
 # RBP Stack
 
@@ -122,7 +122,7 @@ Both workflows use the same gatekeeper:
 
 <div align="center">
 
-<img src="docs/rbp-2-workflow-flow.png" alt="RBP Workflow" width="700"/>
+<img src="docs/rbp-2-workflow-flow.jpg" alt="RBP Workflow" width="700"/>
 
 *From requirements to verified code. No human intervention required.*
 
@@ -172,7 +172,7 @@ We don't trust agents. We verify them at every layer.
 
 <div align="center">
 
-<img src="docs/rbp-3-verification-system.png" alt="Verification System" width="600"/>
+<img src="docs/rbp-3-verification-system.jpg" alt="Verification System" width="600"/>
 
 </div>
 
@@ -276,7 +276,7 @@ bd tree          # Task hierarchy
 
 <div align="center">
 
-<img src="docs/rbp-1-layer-architecture.png" alt="Architecture" width="700"/>
+<img src="docs/rbp-1-layer-architecture.jpg" alt="Architecture" width="700"/>
 
 </div>
 
@@ -463,7 +463,9 @@ rbp/
 │   ├── status.md             # /rbp:status command
 │   └── validate.md           # /rbp:validate command
 ├── templates/
-│   └── rbp-config.example.yaml
+│   ├── rbp-config.yaml         # Base configuration
+│   ├── rbp-config.example.yaml # Documented config with comments
+│   └── spec-template.md        # Quick-plan spec format template
 ├── install.sh                # One-line installation
 ├── validate.sh               # Installation checker
 └── README.md                 # Package documentation
@@ -482,6 +484,10 @@ rbp/
 project:
   name: "your-project"
 
+paths:
+  stories: "docs/stories"      # BMAD stories
+  specs: "specs"               # Quick-plan specs
+
 execution:
   max_iterations: 50
   phase_size: 5
@@ -490,6 +496,16 @@ verification:
   require_tests: true
   require_playwright_for_ui: true
   test_command: "bun run test"
+
+quick_plan:
+  command: "/quick-plan"
+  spec_template: "templates/spec-template.md"
+
+codex:
+  enabled: true                # Set false if Codex not installed
+  model: "gpt-5-codex"
+  reasoning_effort: "high"
+  skip_by_default: false       # Set true to skip review by default
 ```
 
 <br />

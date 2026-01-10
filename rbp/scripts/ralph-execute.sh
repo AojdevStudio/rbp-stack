@@ -20,10 +20,38 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# Configuration
+# Configuration defaults
 MAX_ITERATIONS=50
 SPEC_FILE=""
 SKIP_REVIEW=false
+
+# Load config from rbp-config.yaml if available
+CONFIG_FILE="$PROJECT_ROOT/rbp-config.yaml"
+if [ -f "$CONFIG_FILE" ]; then
+  # Read paths.specs (default: specs)
+  SPECS_DIR=$(grep -A5 '^paths:' "$CONFIG_FILE" 2>/dev/null | grep 'specs:' | sed 's/.*specs:[[:space:]]*"\?\([^"]*\)"\?.*/\1/' | head -1)
+  SPECS_DIR="${SPECS_DIR:-specs}"
+
+  # Read verification.test_command
+  CONFIG_TEST_CMD=$(grep -A10 '^verification:' "$CONFIG_FILE" 2>/dev/null | grep 'test_command:' | sed 's/.*test_command:[[:space:]]*"\?\([^"]*\)"\?.*/\1/' | head -1)
+
+  # Read codex settings
+  CODEX_ENABLED=$(grep -A10 '^codex:' "$CONFIG_FILE" 2>/dev/null | grep 'enabled:' | sed 's/.*enabled:[[:space:]]*//' | head -1)
+  CODEX_MODEL=$(grep -A10 '^codex:' "$CONFIG_FILE" 2>/dev/null | grep 'model:' | sed 's/.*model:[[:space:]]*"\?\([^"]*\)"\?.*/\1/' | head -1)
+  CODEX_REASONING=$(grep -A10 '^codex:' "$CONFIG_FILE" 2>/dev/null | grep 'reasoning_effort:' | sed 's/.*reasoning_effort:[[:space:]]*"\?\([^"]*\)"\?.*/\1/' | head -1)
+  CODEX_SKIP_DEFAULT=$(grep -A10 '^codex:' "$CONFIG_FILE" 2>/dev/null | grep 'skip_by_default:' | sed 's/.*skip_by_default:[[:space:]]*//' | head -1)
+
+  # Apply codex skip_by_default if set
+  if [ "$CODEX_SKIP_DEFAULT" = "true" ]; then
+    SKIP_REVIEW=true
+  fi
+else
+  SPECS_DIR="specs"
+  CONFIG_TEST_CMD=""
+  CODEX_ENABLED="true"
+  CODEX_MODEL="gpt-5-codex"
+  CODEX_REASONING="high"
+fi
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -74,11 +102,11 @@ print_banner() {
 find_spec_file() {
   if [ -n "$SPEC_FILE" ]; then
     if [ ! -f "$SPEC_FILE" ]; then
-      # Try in specs/ directory
-      if [ -f "$PROJECT_ROOT/specs/$SPEC_FILE" ]; then
-        SPEC_FILE="$PROJECT_ROOT/specs/$SPEC_FILE"
-      elif [ -f "$PROJECT_ROOT/specs/${SPEC_FILE}.md" ]; then
-        SPEC_FILE="$PROJECT_ROOT/specs/${SPEC_FILE}.md"
+      # Try in specs directory (from config)
+      if [ -f "$PROJECT_ROOT/$SPECS_DIR/$SPEC_FILE" ]; then
+        SPEC_FILE="$PROJECT_ROOT/$SPECS_DIR/$SPEC_FILE"
+      elif [ -f "$PROJECT_ROOT/$SPECS_DIR/${SPEC_FILE}.md" ]; then
+        SPEC_FILE="$PROJECT_ROOT/$SPECS_DIR/${SPEC_FILE}.md"
       else
         echo -e "${RED}ERROR: Spec file not found: $SPEC_FILE${NC}"
         exit 1
@@ -92,7 +120,7 @@ find_spec_file() {
   local specs=()
   local i=1
 
-  for f in "$PROJECT_ROOT/specs/"*.md; do
+  for f in "$PROJECT_ROOT/$SPECS_DIR/"*.md; do
     if [ -f "$f" ]; then
       local name=$(basename "$f" .md)
       specs+=("$f")
@@ -102,7 +130,7 @@ find_spec_file() {
   done
 
   if [ ${#specs[@]} -eq 0 ]; then
-    echo -e "${RED}No specs found in $PROJECT_ROOT/specs/${NC}"
+    echo -e "${RED}No specs found in $PROJECT_ROOT/$SPECS_DIR/${NC}"
     echo -e "Run /quick-plan to create a spec first."
     exit 1
   fi
@@ -125,6 +153,11 @@ run_codex_review() {
     return 0
   fi
 
+  if [ "$CODEX_ENABLED" = "false" ]; then
+    echo -e "${YELLOW}Codex review disabled in config${NC}\n"
+    return 0
+  fi
+
   echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"
   echo -e "${BLUE}  Step 1: Codex Pre-Flight Review${NC}"
   echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}\n"
@@ -136,7 +169,9 @@ run_codex_review() {
     return 0
   fi
 
-  echo -e "${CYAN}Running GPT-5-Codex review on spec...${NC}\n"
+  local model="${CODEX_MODEL:-gpt-5-codex}"
+  local reasoning="${CODEX_REASONING:-high}"
+  echo -e "${CYAN}Running $model review on spec (reasoning: $reasoning)...${NC}\n"
 
   local review_prompt="Review this implementation spec for:
 1. Missing edge cases that could cause bugs
@@ -152,10 +187,10 @@ $(cat "$SPEC_FILE")
 
 Provide specific, actionable improvements. Be concise."
 
-  # Run Codex in read-only mode with high reasoning
+  # Run Codex in read-only mode with configured settings
   echo "$review_prompt" | codex exec --skip-git-repo-check \
-    -m gpt-5-codex \
-    --config model_reasoning_effort="high" \
+    -m "$model" \
+    --config model_reasoning_effort="$reasoning" \
     --sandbox read-only \
     2>/dev/null || {
       echo -e "${YELLOW}Codex review failed or unavailable. Continuing without review.${NC}"
@@ -200,28 +235,38 @@ parse_spec_to_beads() {
 
 # Get test command from spec or config
 get_test_command() {
-  local config_file="$PROJECT_ROOT/.rbp/test-command"
+  # Priority: 1) .rbp/test-command (from spec), 2) rbp-config.yaml, 3) auto-detect
 
-  if [ -f "$config_file" ]; then
-    cat "$config_file"
-  else
-    # Try to detect from package.json
-    if [ -f "$PROJECT_ROOT/package.json" ]; then
-      if grep -q '"test"' "$PROJECT_ROOT/package.json"; then
-        if grep -q '"bun' "$PROJECT_ROOT/package.json"; then
-          echo "bun test"
-        elif grep -q '"vitest' "$PROJECT_ROOT/package.json"; then
-          echo "npx vitest run"
-        else
-          echo "npm test"
-        fi
-      else
+  local spec_config="$PROJECT_ROOT/.rbp/test-command"
+
+  # Check spec-specific override first
+  if [ -f "$spec_config" ]; then
+    cat "$spec_config"
+    return
+  fi
+
+  # Check rbp-config.yaml
+  if [ -n "$CONFIG_TEST_CMD" ]; then
+    echo "$CONFIG_TEST_CMD"
+    return
+  fi
+
+  # Auto-detect from package.json
+  if [ -f "$PROJECT_ROOT/package.json" ]; then
+    if grep -q '"test"' "$PROJECT_ROOT/package.json"; then
+      if grep -q '"bun' "$PROJECT_ROOT/package.json"; then
         echo "bun test"
+      elif grep -q '"vitest' "$PROJECT_ROOT/package.json"; then
+        echo "npx vitest run"
+      else
+        echo "npm test"
       fi
-    else
-      echo "bun test"
+      return
     fi
   fi
+
+  # Default fallback
+  echo "bun test"
 }
 
 # Run the execution loop
