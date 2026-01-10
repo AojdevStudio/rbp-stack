@@ -10,7 +10,7 @@ Start the RBP autonomous execution loop to implement tasks with test-gated verif
 
 ## Variables
 
-MAX_ITERATIONS: $1 (optional, default: 50)
+MAX_ITERATIONS: $1 (optional, default: 10)
 SCRIPTS_DIR: scripts/rbp
 PROGRESS_FILE: scripts/rbp/progress.txt
 

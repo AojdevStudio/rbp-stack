@@ -31,7 +31,7 @@ paths:
 execution:
   # Maximum Ralph loop iterations before stopping
   # Increase for larger stories, decrease for quick iterations
-  max_iterations: 50
+  max_iterations: 10
 
   # Subtasks per execution phase (for large tasks)
   # The Execution Sequencer groups subtasks into manageable phases

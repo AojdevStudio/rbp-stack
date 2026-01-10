@@ -489,7 +489,7 @@ paths:
   specs: "specs"               # Quick-plan specs
 
 execution:
-  max_iterations: 50
+  max_iterations: 10
   phase_size: 5
 
 verification:

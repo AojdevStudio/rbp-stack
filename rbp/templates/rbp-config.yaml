@@ -23,7 +23,7 @@ paths:
 
 execution:
   # Maximum Ralph loop iterations before stopping
-  max_iterations: 50
+  max_iterations: 10
 
   # Subtasks per execution phase (for large tasks)
   phase_size: 5
