@@ -80,8 +80,16 @@ check_prerequisites() {
   echo ""
   print_step "Checking optional dependencies..."
 
-  if [ -d "$HOME/.claude/skills/Observability" ]; then
-    print_success "PAI Observability found (real-time dashboard available)"
+  if [ -f "$HOME/.claude/observability/manage.sh" ]; then
+    print_success "PAI Observability found"
+
+    # Check if it's running
+    if curl -s http://localhost:4000/health 2>/dev/null | grep -q "ok"; then
+      print_success "Observability dashboard is running at http://localhost:5172"
+    else
+      echo -e "  ${YELLOW}Observability installed but not running${NC}"
+      echo -e "  ${CYAN}Start with: ~/.claude/observability/manage.sh start${NC}"
+    fi
   else
     echo -e "  ${YELLOW}PAI Observability not found - observability features will be limited${NC}"
     echo -e "  ${YELLOW}Install PAI for real-time monitoring:${NC}"
