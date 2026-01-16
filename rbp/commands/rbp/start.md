@@ -38,7 +38,7 @@ PROGRESS_FILE: scripts/rbp/progress.txt
 Before starting execution, check for PAI Observability integration:
 
 1. **Check if PAI Observability is installed:**
-   - Look for `~/.claude/skills/Observability/manage.sh`
+   - Look for `~/.claude/observability/manage.sh`
    - If not found: Print warning and continue without dashboard
 
 2. **Check if dashboard is already running:**
@@ -49,7 +49,7 @@ Before starting execution, check for PAI Observability integration:
 
 3. **Launch dashboard if not running:**
    ```bash
-   ~/.claude/skills/Observability/manage.sh start
+   ~/.claude/observability/manage.sh start
    ```
    - Wait up to 10 seconds for startup
    - Verify with health check

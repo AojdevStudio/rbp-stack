@@ -546,7 +546,7 @@ cd ~/PAI && ./install.sh
 # Events are written to: ~/.claude/history/raw-outputs/YYYY-MM/YYYY-MM-DD_all-events.jsonl
 
 # 3. Launch dashboard with /rbp:start or manually:
-~/.claude/skills/Observability/manage.sh start
+~/.claude/observability/manage.sh start
 # Dashboard: http://localhost:5172
 ```
 
