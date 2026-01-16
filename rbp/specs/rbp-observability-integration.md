@@ -120,7 +120,7 @@ Additional events:
 When `/rbp:start` is invoked:
 1. Check if PAI Observability is running (check port 4000/5172)
 2. If not running:
-   - Execute `~/.claude/skills/Observability/manage.sh start`
+   - Execute `~/.claude/observability/manage.sh start`
    - Wait for server to be ready (poll http://localhost:4000/health)
 3. Open browser to http://localhost:5172 (in forked context)
 4. Proceed with RBP execution (emit events as Ralph runs)
@@ -147,11 +147,11 @@ If PAI is not found:
 
 ### PAI Not Installed
 
-**Scenario:** User runs `/rbp:start` but PAI is not installed at `~/.claude/skills/Observability/`
+**Scenario:** User runs `/rbp:start` but PAI is not installed at `~/.claude/observability/`
 
 **Handling:**
 ```bash
-if [ ! -f ~/.claude/skills/Observability/manage.sh ]; then
+if [ ! -f ~/.claude/observability/manage.sh ]; then
   echo "⚠️  PAI Observability not found"
   echo "Install PAI from: https://github.com/danielmiessler/Personal_AI_Infrastructure.git"
   echo "Continuing without real-time observability..."
@@ -171,7 +171,7 @@ fi
 ```bash
 timeout 10s bash -c 'until curl -s http://localhost:4000/health; do sleep 1; done' 2>/dev/null || {
   echo "⚠️  Could not start PAI Observability (timeout)"
-  echo "Check: ~/.claude/skills/Observability/manage.sh status"
+  echo "Check: ~/.claude/observability/manage.sh status"
   echo "Continuing with file-based logging..."
   OBSERVABILITY_ENABLED=false
 }
@@ -420,7 +420,7 @@ https://github.com/danielmiessler/Personal_AI_Infrastructure.git
 
 **Check During `./rbp/install.sh`:**
 ```bash
-if [ -d "$HOME/.claude/skills/Observability" ]; then
+if [ -f "$HOME/.claude/observability/manage.sh" ]; then
   echo "✅ PAI Observability found"
 else
   echo "⚠️  PAI not found - observability features will be limited"
@@ -675,13 +675,13 @@ cd /path/to/test-project
 # - Task closes successfully
 
 # Test 2: PAI not installed (fallback)
-mv ~/.claude/skills/Observability ~/.claude/skills/Observability.bak
+mv ~/.claude/observability ~/.claude/observability.bak
 /rbp:start
 # Verify:
 # - Warning about missing PAI
 # - Execution continues
 # - progress.txt logs as normal
-mv ~/.claude/skills/Observability.bak ~/.claude/skills/Observability
+mv ~/.claude/observability.bak ~/.claude/observability
 
 # Test 3: Dashboard won't start (port conflict)
 # Start something else on port 4000
@@ -1003,7 +1003,7 @@ fi
 - **ID:** obs-007
 - **Dependencies:** none
 - **Files:** `rbp/install.sh`
-- **Acceptance:** Check for ~/.claude/skills/Observability/, warn if missing, allow continuation
+- **Acceptance:** Check for ~/.claude/observability/manage.sh, warn if missing, allow continuation
 - **Tests:** Run install.sh with and without PAI, verify behavior
 
 ### Task 8: Bundle quick-plan.md in RBP Repo
