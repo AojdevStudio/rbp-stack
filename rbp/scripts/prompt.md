@@ -84,6 +84,22 @@ If you encounter an error you cannot resolve, output:
 
 ---
 
+## Enforcement and Consequences
+
+**CRITICAL: Understanding the stakes of non-compliance**
+
+1. **False Completion Claims**: If you output `<rbp:complete/>` without running close-with-proof.sh, your work will be discarded and re-executed by the next iteration. The task will remain open indefinitely.
+
+2. **Test Verification Requirement**: Tasks without test proof will remain open indefinitely until properly verified. Ralph will keep attempting the same task in subsequent iterations until tests pass.
+
+3. **Failure Recovery**: On test failure, fix the code and retry—do not give up or skip to other tasks. The notes from your failed attempt will be injected into the next iteration's prompt as context.
+
+4. **Accountability**: Every closure is recorded in git with test output as proof. Claiming completion without verification creates technical debt and wastes iteration cycles.
+
+**The protocol is not optional.** Following these steps ensures quality, maintains system trust, and prevents infinite retry loops.
+
+---
+
 ## Commit Message Format
 
 When committing, use this format:
