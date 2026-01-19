@@ -128,49 +128,37 @@ check_prerequisites() {
   fi
 }
 
+# Check if JSON array is empty (returns 0 if empty, 1 otherwise)
+json_array_empty() {
+  local json="$1"
+  if command -v jq &>/dev/null; then
+    local count=$(echo "$json" | jq 'length' 2>/dev/null || echo "0")
+    [ "$count" = "0" ] || [ -z "$count" ]
+  else
+    local compact=$(echo "$json" | tr -d '[:space:]')
+    [ "$compact" = "[]" ] || [ -z "$compact" ]
+  fi
+}
+
 # Get next ready task from beads (using --json for reliable parsing)
 get_next_task() {
   cd "$PROJECT_ROOT"
-  # Get first ready task in JSON format
-  # Use jq to handle any JSON formatting (pretty-printed or compact)
   local ready_json=$(bd ready --json --limit 1 2>/dev/null || echo "[]")
 
-  # Check if jq is available for reliable parsing
-  if command -v jq &>/dev/null; then
-    # Use jq to check if array is empty and extract first element
-    local count=$(echo "$ready_json" | jq 'length' 2>/dev/null || echo "0")
-    if [ "$count" = "0" ] || [ -z "$count" ]; then
-      echo ""
-    else
-      # Return the first task as compact JSON
-      echo "$ready_json" | jq -c '.[0]' 2>/dev/null
-    fi
+  if json_array_empty "$ready_json"; then
+    echo ""
+  elif command -v jq &>/dev/null; then
+    echo "$ready_json" | jq -c '.[0]' 2>/dev/null
   else
-    # Fallback: compact the JSON and do string check
-    local compact=$(echo "$ready_json" | tr -d '[:space:]')
-    if [ "$compact" = "[]" ] || [ -z "$compact" ]; then
-      echo ""
-    else
-      echo "$ready_json"
-    fi
+    echo "$ready_json"
   fi
 }
 
 # Check if all tasks are complete
 all_tasks_complete() {
   cd "$PROJECT_ROOT"
-  # Use --json and check if array is empty
   local ready_json=$(bd ready --json 2>/dev/null || echo "[]")
-
-  # Check if jq is available for reliable parsing
-  if command -v jq &>/dev/null; then
-    local count=$(echo "$ready_json" | jq 'length' 2>/dev/null || echo "0")
-    [ "$count" = "0" ] || [ -z "$count" ]
-  else
-    # Fallback: compact the JSON and compare
-    local compact=$(echo "$ready_json" | tr -d '[:space:]')
-    [ "$compact" = "[]" ] || [ -z "$compact" ]
-  fi
+  json_array_empty "$ready_json"
 }
 
 # Log progress
@@ -225,7 +213,30 @@ run_iteration() {
 
   # Build the prompt with current task context
   local prompt=$(cat "$SCRIPT_DIR/prompt.md")
-  prompt="$prompt
+
+  # Fetch previous notes for failure state injection
+  local previous_notes=""
+  if command -v jq &>/dev/null && [ -n "$task_id" ] && [ "$task_id" != "unknown" ]; then
+    cd "$PROJECT_ROOT"
+    previous_notes=$(bd show "$task_id" --json 2>/dev/null | jq -r '.notes // empty' || echo "")
+  fi
+
+  # Inject failure context if previous notes exist
+  local failure_context=""
+  if [ -n "$previous_notes" ]; then
+    failure_context="
+
+## Previous Attempt Failed
+
+The last attempt encountered these issues:
+
+$previous_notes
+
+Fix the issues above before proceeding.
+"
+  fi
+
+  prompt="$prompt$failure_context
 
 ## Current Task from Beads
 
