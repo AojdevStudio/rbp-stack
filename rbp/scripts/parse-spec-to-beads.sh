@@ -108,6 +108,8 @@ CURRENT_DEPS=""
 CURRENT_FILES=""
 CURRENT_ACCEPTANCE=""
 CURRENT_TESTS=""
+CURRENT_SUBTASKS=()
+IN_SUBTASKS=false
 
 process_task() {
   if [ -z "$CURRENT_TASK" ] || [ -z "$CURRENT_ID" ]; then
@@ -152,6 +154,40 @@ process_task() {
   if [ -n "$BEAD_ID" ]; then
     TASK_TO_BEAD[$CURRENT_ID]="$BEAD_ID"
     echo -e "    ${GREEN}Created:${NC} $BEAD_ID"
+
+    # Process subtasks as child beads if any exist
+    if [ ${#CURRENT_SUBTASKS[@]} -gt 0 ]; then
+      echo -e "    ${CYAN}Creating ${#CURRENT_SUBTASKS[@]} subtasks...${NC}"
+      local PREV_SUBTASK_ID=""
+      local SUBTASK_NUM=0
+
+      for subtask_title in "${CURRENT_SUBTASKS[@]}"; do
+        SUBTASK_NUM=$((SUBTASK_NUM + 1))
+
+        # Build subtask creation command
+        local CREATE_CMD="bd create \"$subtask_title\" --parent \"$BEAD_ID\" -l \"subtask\""
+
+        # Chain dependency: subtask N depends on subtask N-1
+        if [ -n "$PREV_SUBTASK_ID" ]; then
+          CREATE_CMD="$CREATE_CMD --depends \"$PREV_SUBTASK_ID\""
+        fi
+
+        # Create the subtask bead
+        local SUBTASK_BEAD_ID=$(eval "$CREATE_CMD --silent 2>/dev/null" || echo "")
+
+        if [ -n "$SUBTASK_BEAD_ID" ]; then
+          echo -e "      ${GREEN}Subtask $SUBTASK_NUM:${NC} $SUBTASK_BEAD_ID"
+          PREV_SUBTASK_ID="$SUBTASK_BEAD_ID"
+        else
+          echo -e "      ${RED}Failed to create subtask $SUBTASK_NUM${NC}"
+        fi
+      done
+
+      # Make parent task depend on last subtask completing
+      if [ -n "$PREV_SUBTASK_ID" ]; then
+        bd update "$BEAD_ID" --depends "$PREV_SUBTASK_ID" --silent 2>/dev/null || true
+      fi
+    fi
   else
     echo -e "    ${RED}Failed to create bead${NC}"
   fi
@@ -163,6 +199,8 @@ process_task() {
   CURRENT_FILES=""
   CURRENT_ACCEPTANCE=""
   CURRENT_TESTS=""
+  CURRENT_SUBTASKS=()
+  IN_SUBTASKS=false
 }
 
 # Parse tasks line by line
@@ -195,6 +233,27 @@ while IFS= read -r line; do
 
   if echo "$line" | grep -qE "^\s*-\s*\*\*Tests:\*\*"; then
     CURRENT_TESTS=$(echo "$line" | sed 's/.*\*\*Tests:\*\*\s*//')
+  fi
+
+  # Detect subtask section start
+  if echo "$line" | grep -qE "^\s*-\s*\*\*Subtasks:\*\*"; then
+    IN_SUBTASKS=true
+  fi
+
+  # Parse subtask items (checklist under Subtasks)
+  if [ "$IN_SUBTASKS" = true ] && echo "$line" | grep -qE "^\s*-\s*\[[ x]\]"; then
+    # Extract subtask text (remove checkbox markup)
+    local subtask=$(echo "$line" | sed 's/^\s*-\s*\[[ x]\]\s*//')
+    if [ -n "$subtask" ]; then
+      CURRENT_SUBTASKS+=("$subtask")
+    fi
+  fi
+
+  # End subtasks section when we hit next metadata field or new task
+  if [ "$IN_SUBTASKS" = true ] && echo "$line" | grep -qE "(^\s*-\s*\*\*|^###)"; then
+    if ! echo "$line" | grep -qE "^\s*-\s*\*\*Subtasks:\*\*"; then
+      IN_SUBTASKS=false
+    fi
   fi
 
 done <<< "$TASKS_SECTION"
