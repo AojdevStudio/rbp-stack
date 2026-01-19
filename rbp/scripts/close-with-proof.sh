@@ -197,6 +197,11 @@ else
   echo -e "${RED}║  CLOSURE BLOCKED - Tests must pass                   ║${NC}"
   echo -e "${RED}╚═══════════════════════════════════════════════════════╝${NC}"
 
+  # Append failure notes to bead for next iteration's context
+  TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+  FAILURE_NOTE="FAILED: $TIMESTAMP\n$PROOF_SUMMARY"
+  bd update "$BEAD_ID" --note "$(echo -e "$FAILURE_NOTE")" 2>/dev/null || true
+
   # Output error signal for Ralph
   echo ""
   echo "<rbp:error>Tests failed - bead closure blocked</rbp:error>"

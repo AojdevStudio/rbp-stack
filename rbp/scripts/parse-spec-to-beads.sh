@@ -243,7 +243,7 @@ while IFS= read -r line; do
   # Parse subtask items (checklist under Subtasks)
   if [ "$IN_SUBTASKS" = true ] && echo "$line" | grep -qE "^\s*-\s*\[[ x]\]"; then
     # Extract subtask text (remove checkbox markup)
-    local subtask=$(echo "$line" | sed 's/^\s*-\s*\[[ x]\]\s*//')
+    subtask=$(echo "$line" | sed 's/^\s*-\s*\[[ x]\]\s*//')
     if [ -n "$subtask" ]; then
       CURRENT_SUBTASKS+=("$subtask")
     fi
