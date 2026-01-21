@@ -1,8 +1,9 @@
-import { describe, test, expect, mock, beforeEach, afterEach } from "bun:test";
-import { injectFailureContext, isUiTask } from "../../lib/src/workflows/beads";
+import { describe, test, expect, mock, beforeEach, afterEach, spyOn } from "bun:test";
+import { injectFailureContext, isUiTask, runBeadsWorkflow, type BeadsWorkflowOptions, type BeadsWorkflowResult } from "../../lib/src/workflows/beads";
 import type { Bead } from "../../lib/src/integrations/beads-cli";
 import type { RbpConfig } from "../../lib/src/config/types";
 import { RbpConfigSchema } from "../../lib/src/config/schema";
+import * as beadsCli from "../../lib/src/integrations/beads-cli";
 
 describe("injectFailureContext", () => {
   test("adds failure context to prompt", () => {
@@ -231,5 +232,221 @@ describe("runBeadsWorkflow", () => {
     });
 
     expect(configNoTests.verification.require_tests).toBe(false);
+  });
+});
+
+// Integration tests for runBeadsWorkflow with mocked beads-cli
+describe("runBeadsWorkflow integration", () => {
+  const testConfig = RbpConfigSchema.parse({
+    project: { name: "test" },
+    execution: { max_iterations: 5, iteration_delay: 0 },
+    verification: { require_tests: true, test_command: "bun test" },
+  });
+
+  let getReadyBeadSpy: ReturnType<typeof spyOn>;
+  let updateBeadStatusSpy: ReturnType<typeof spyOn>;
+  let closeBeadSpy: ReturnType<typeof spyOn>;
+  let addBeadNoteSpy: ReturnType<typeof spyOn>;
+
+  beforeEach(() => {
+    getReadyBeadSpy = spyOn(beadsCli, "getReadyBead");
+    updateBeadStatusSpy = spyOn(beadsCli, "updateBeadStatus").mockResolvedValue({ success: true });
+    closeBeadSpy = spyOn(beadsCli, "closeBead").mockResolvedValue({ success: true });
+    addBeadNoteSpy = spyOn(beadsCli, "addBeadNote").mockResolvedValue({ success: true });
+  });
+
+  afterEach(() => {
+    getReadyBeadSpy.mockRestore();
+    updateBeadStatusSpy.mockRestore();
+    closeBeadSpy.mockRestore();
+    addBeadNoteSpy.mockRestore();
+  });
+
+  test("completes workflow when no tasks available", async () => {
+    getReadyBeadSpy.mockResolvedValue({ success: true, data: null });
+
+    const result = await runBeadsWorkflow({ config: testConfig });
+
+    expect(result.success).toBe(true);
+    expect(result.tasksCompleted).toBe(0);
+    expect(result.tasksFailed).toBe(0);
+    expect(result.iterations).toBe(1);
+  });
+
+  test("processes tasks and completes successfully", async () => {
+    const mockTasks: Bead[] = [
+      { id: "task-1", title: "First Task", status: "open" },
+      { id: "task-2", title: "Second Task", status: "open" },
+    ];
+    let callCount = 0;
+
+    getReadyBeadSpy.mockImplementation(async () => {
+      const task = mockTasks[callCount++];
+      return { success: true, data: task || null };
+    });
+
+    const result = await runBeadsWorkflow({
+      config: testConfig,
+      runTests: async () => ({ passed: true, output: "All tests passed" }),
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.tasksCompleted).toBe(2);
+    expect(result.tasksFailed).toBe(0);
+    expect(closeBeadSpy).toHaveBeenCalledTimes(2);
+  });
+
+  test("handles test failures with failure context tracking", async () => {
+    const mockTask: Bead = { id: "task-fail", title: "Failing Task", status: "open" };
+    let attempts = 0;
+
+    getReadyBeadSpy.mockImplementation(async () => {
+      attempts++;
+      if (attempts <= 2) {
+        return { success: true, data: mockTask };
+      }
+      return { success: true, data: null };
+    });
+
+    const result = await runBeadsWorkflow({
+      config: testConfig,
+      runTests: async () => ({ passed: false, output: "Test assertion failed at line 42" }),
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.tasksFailed).toBe(2);
+    expect(addBeadNoteSpy).toHaveBeenCalled();
+    expect(updateBeadStatusSpy).toHaveBeenCalledWith("task-fail", "open");
+  });
+
+  test("calls onTaskReady callback with task", async () => {
+    const mockTask: Bead = { id: "task-callback", title: "Callback Task", status: "open" };
+    let receivedTask: Bead | null = null;
+
+    getReadyBeadSpy.mockResolvedValueOnce({ success: true, data: mockTask });
+    getReadyBeadSpy.mockResolvedValueOnce({ success: true, data: null });
+
+    await runBeadsWorkflow({
+      config: testConfig,
+      runTests: async () => ({ passed: true, output: "OK" }),
+      onTaskReady: async (task) => {
+        receivedTask = task;
+      },
+    });
+
+    expect(receivedTask).not.toBeNull();
+    expect(receivedTask?.id).toBe("task-callback");
+    expect(receivedTask?.title).toBe("Callback Task");
+  });
+
+  test("respects maxIterations limit", async () => {
+    getReadyBeadSpy.mockResolvedValue({ success: true, data: { id: "infinite", title: "Infinite", status: "open" } });
+
+    const result = await runBeadsWorkflow({
+      config: testConfig,
+      maxIterations: 3,
+      runTests: async () => ({ passed: true, output: "OK" }),
+    });
+
+    expect(result.iterations).toBe(3);
+    expect(closeBeadSpy).toHaveBeenCalledTimes(3);
+  });
+
+  test("handles dry run mode", async () => {
+    const mockTask: Bead = { id: "dry-run", title: "Dry Run Task", status: "open" };
+
+    getReadyBeadSpy.mockResolvedValueOnce({ success: true, data: mockTask });
+    getReadyBeadSpy.mockResolvedValueOnce({ success: true, data: null });
+
+    const result = await runBeadsWorkflow({
+      config: testConfig,
+      dryRun: true,
+    });
+
+    expect(updateBeadStatusSpy).not.toHaveBeenCalled();
+    expect(closeBeadSpy).not.toHaveBeenCalled();
+    expect(result.tasksCompleted).toBe(0);
+  });
+
+  test("skips tests when require_tests is false", async () => {
+    const configNoTests = RbpConfigSchema.parse({
+      project: { name: "test" },
+      execution: { max_iterations: 5, iteration_delay: 0 },
+      verification: { require_tests: false },
+    });
+
+    const mockTask: Bead = { id: "no-test", title: "No Test Task", status: "open" };
+    let testsCalled = false;
+
+    getReadyBeadSpy.mockResolvedValueOnce({ success: true, data: mockTask });
+    getReadyBeadSpy.mockResolvedValueOnce({ success: true, data: null });
+
+    const result = await runBeadsWorkflow({
+      config: configNoTests,
+      runTests: async () => {
+        testsCalled = true;
+        return { passed: true, output: "OK" };
+      },
+    });
+
+    expect(testsCalled).toBe(false);
+    expect(result.tasksCompleted).toBe(1);
+  });
+
+  test("handles beads CLI errors gracefully", async () => {
+    getReadyBeadSpy.mockResolvedValue({
+      success: false,
+      error: { code: "BEADS_COMMAND_FAILED", message: "bd ready failed" },
+    });
+
+    const result = await runBeadsWorkflow({ config: testConfig });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.code).toBe("BEADS_COMMAND_FAILED");
+  });
+
+  test("handles exception during task processing", async () => {
+    const mockTask: Bead = { id: "error-task", title: "Error Task", status: "open" };
+
+    getReadyBeadSpy.mockResolvedValueOnce({ success: true, data: mockTask });
+    getReadyBeadSpy.mockResolvedValueOnce({ success: true, data: null });
+
+    const result = await runBeadsWorkflow({
+      config: testConfig,
+      onTaskReady: async () => {
+        throw new Error("Task processing failed");
+      },
+    });
+
+    expect(result.tasksFailed).toBe(1);
+    expect(updateBeadStatusSpy).toHaveBeenCalledWith("error-task", "open");
+  });
+
+  test("tracks progress correctly across multiple iterations", async () => {
+    const mockTasks: (Bead | null)[] = [
+      { id: "pass-1", title: "Pass 1", status: "open" },
+      { id: "fail-1", title: "Fail 1", status: "open" },
+      { id: "pass-2", title: "Pass 2", status: "open" },
+      null,
+    ];
+    let idx = 0;
+    let testCallCount = 0;
+
+    getReadyBeadSpy.mockImplementation(async () => {
+      return { success: true, data: mockTasks[idx++] };
+    });
+
+    const result = await runBeadsWorkflow({
+      config: testConfig,
+      runTests: async () => {
+        testCallCount++;
+        // Second test fails
+        return { passed: testCallCount !== 2, output: testCallCount === 2 ? "FAILED" : "OK" };
+      },
+    });
+
+    expect(result.tasksCompleted).toBe(2);
+    expect(result.tasksFailed).toBe(1);
+    expect(result.iterations).toBe(4);
   });
 });
