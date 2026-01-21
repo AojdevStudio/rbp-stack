@@ -182,10 +182,11 @@ We don't trust agents. We verify them at every layer.
 |:------|:----------|:-----------------|
 | **1** | Objective Acceptance Criteria | Vague "it works" claims |
 | **2** | Protocol Mandate | Skipping verification steps |
-| **3** | Test Gating (`bun test`) | Claims without passing tests |
-| **4** | Playwright Verification | UI lies ("looks correct") |
-| **5** | Human Code Review | Subtle implementation issues |
-| **6** | Beads Audit Trail | Retroactive tampering |
+| **3** | Failure State Injection | "I don't remember what went wrong" |
+| **4** | Test Gating (`bun test`) | Claims without passing tests |
+| **5** | Playwright Verification | UI lies ("looks correct") |
+| **6** | Human Code Review | Subtle implementation issues |
+| **7** | Beads Audit Trail | Retroactive tampering |
 
 <br />
 
@@ -213,6 +214,9 @@ curl -fsSL https://bun.sh/install | bash
 
 # Claude Code CLI (one-time global install)
 # https://claude.ai/download
+
+# PAI Observability (optional, for real-time monitoring dashboard)
+# https://github.com/danielmiessler/Personal_AI_Infrastructure.git
 ```
 
 ### Install
@@ -321,6 +325,155 @@ echo "✅ Task verified and closed"
 
 <br />
 
+## Failure State Injection
+
+When a task fails its test verification, Ralph automatically injects the failure context into the next attempt:
+
+```
+Task Iteration 1:
+  ├── Run tests
+  ├── Tests fail → Append failure notes to bead
+  └── Ralph continues to next task
+
+Task Iteration 2 (when task becomes ready again):
+  ├── Read previous failure notes from bead
+  ├── Inject "Previous Attempt Failed" section into prompt
+  ├── Agent sees exactly what went wrong
+  ├── Agent fixes the issues
+  ├── Run tests again
+  └── If pass → Close with proof
+```
+
+This prevents the agent from making the same mistake twice.
+
+<br />
+
+---
+
+<br />
+
+## Atomic Subtasks
+
+When a task contains subtasks, the parser creates them as **separate child beads with explicit dependencies**:
+
+```
+Task: "Create admin dashboard"
+├── Subtask 1.1: Build layout structure (no dependencies)
+│   └── Bead ID: bd-123.1.1
+├── Subtask 1.2: Add sidebar (depends on 1.1)
+│   └── Bead ID: bd-123.1.2
+├── Subtask 1.3: Implement navigation (depends on 1.2)
+│   └── Bead ID: bd-123.1.3
+└── Task depends on final subtask (1.3)
+```
+
+Benefits:
+- **Clear sequencing**: Each subtask has explicit dependencies
+- **Granular tracking**: Each subtask is independently verifiable
+- **Failure recovery**: If subtask 2 fails, only that subtask retries (not 1.1)
+- **Optimal context**: Ralph executes one subtask per iteration
+
+<br />
+
+---
+
+<br />
+
+## Quick-Plan Workflow
+
+Don't have BMAD? Use the Quick-Plan workflow instead.
+
+### How It Works
+
+```
+/quick-plan "feature description"
+         ↓
+    Codebase Analysis (scans your project)
+         ↓
+    Interview (asks clarifying questions until ZERO gaps remain)
+         ↓
+    specs/feature-name.md (with mandatory Testing Strategy + Implementation Tasks)
+         ↓
+./ralph-execute.sh specs/feature-name.md
+         ↓
+    [Optional] Codex Pre-Flight Review (GPT-5-Codex analyzes spec)
+         ↓
+    Parse Spec → Beads (creates task graph with dependencies)
+         ↓
+    Ralph Loop (bd ready → implement → test → close, repeat)
+         ↓
+    Verified Code
+```
+
+### The Spec Format
+
+Quick-plan generates specs with two mandatory RBP sections:
+
+```markdown
+## Testing Strategy
+
+### Test Framework
+bun test (detected from package.json)
+
+### Test Command
+`bun test`
+
+### Unit Tests
+- [ ] Test: User model validation → File: `tests/user.test.ts`
+- [ ] Test: JWT token generation → File: `tests/auth.test.ts`
+
+## Implementation Tasks
+
+<!-- RBP-TASKS-START -->
+### Task 1: Create user model
+- **ID:** task-001
+- **Dependencies:** none
+- **Files:** `src/models/user.ts`
+- **Acceptance:** User model with email, password hash, timestamps
+- **Tests:** `tests/user.test.ts`
+- **Subtasks:**
+  - [ ] Define TypeScript interfaces
+  - [ ] Implement validation logic
+  - [ ] Add timestamp fields
+
+### Task 2: Add JWT authentication [UI]
+- **ID:** task-002
+- **Dependencies:** task-001
+- **Files:** `src/auth/jwt.ts`, `src/components/LoginForm.tsx`
+- **Acceptance:** Login returns valid JWT, stored in httpOnly cookie
+- **Tests:** `tests/auth.test.ts`
+<!-- RBP-TASKS-END -->
+```
+
+### Codex Pre-Flight Review
+
+Before executing, `ralph-execute.sh` optionally runs GPT-5-Codex to review the spec:
+
+```bash
+# With Codex review (default)
+./scripts/rbp/ralph-execute.sh specs/feature.md
+
+# Skip review
+./scripts/rbp/ralph-execute.sh specs/feature.md --skip-review
+```
+
+Codex checks for:
+- Missing edge cases
+- Wrong technical approaches
+- Missing task dependencies
+- Incomplete testing strategy
+- Security concerns
+
+### UI Auto-Detection
+
+Tasks tagged with `[UI]` or containing UI keywords automatically get the `requires-playwright` flag. The gatekeeper runs Playwright tests for these tasks.
+
+<br />
+
+---
+
+<br />
+
 ## Key Decisions
 
 ### Why Beads as Source of Truth?
@@ -363,20 +516,30 @@ rbp/
 │   ├── ralph.sh              # Main execution loop
 │   ├── ralph-execute.sh      # Quick-plan execution (with Codex review)
 │   ├── close-with-proof.sh   # Test-gated closure (THE GATEKEEPER)
+│   ├── emit-event.sh         # PAI Observability event emitter
 │   ├── parse-story-to-beads.sh  # BMAD Story → Beads conversion
-│   ├── parse-spec-to-beads.sh   # Quick-plan Spec → Beads conversion
+│   ├── parse-spec-to-beads.sh   # Quick-plan Spec → Beads conversion (with atomic subtasks)
 │   ├── sequencer.sh          # Phase grouping for large stories
-│   └── ...
+│   ├── show-active-task.sh   # Display current task
+│   └── save-progress-to-beads.sh  # Sync progress to bead notes
 ├── commands/rbp/
-│   ├── start.md              # /rbp:start command
+│   ├── start.md              # /rbp:start command (with dashboard auto-launch)
 │   ├── status.md             # /rbp:status command
 │   └── validate.md           # /rbp:validate command
 ├── templates/
-│   └── rbp-config.example.yaml
+│   ├── rbp-config.yaml         # Base configuration
+│   ├── rbp-config.example.yaml # Documented config with comments
+│   └── spec-template.md        # Quick-plan spec format template
 ├── install.sh                # One-line installation
 ├── validate.sh               # Installation checker
 └── README.md                 # Package documentation
 ```
+
+Key features of included scripts:
+- **ralph.sh**: Failure state injection, completion signal detection
+- **close-with-proof.sh**: Failure note appending, multi-layer verification
+- **parse-spec-to-beads.sh**: Atomic subtask creation with dependency chaining
+- **prompt.md**: Enforcement and Consequences section documenting stakes
 
 <br />
 
@@ -391,14 +554,96 @@ rbp/
 project:
   name: "your-project"
 
+paths:
+  stories: "docs/stories"      # BMAD stories
+  specs: "specs"               # Quick-plan specs
+
 execution:
-  max_iterations: 50
+  max_iterations: 10
   phase_size: 5
 
 verification:
   require_tests: true
   require_playwright_for_ui: true
   test_command: "bun run test"
+
+quick_plan:
+  command: "/quick-plan"
+  spec_template: "templates/spec-template.md"
+
+codex:
+  enabled: true                # Set false if Codex not installed
+  model: "gpt-5-codex"
+  reasoning_effort: "high"
+  skip_by_default: false       # Set true to skip review by default
+
+observability:
+  enabled: true                # Emit events to PAI dashboard
+  auto_launch: true            # Auto-start dashboard with /rbp:start
+```
+
+<br />
+
+---
+
+<br />
+
+## Observability
+
+RBP integrates with [PAI (Personal AI Infrastructure)](https://github.com/danielmiessler/Personal_AI_Infrastructure.git) for real-time observability of task execution.
+
+### What You Get
+
+| Feature | Description |
+|:--------|:------------|
+| **Real-time Dashboard** | Watch task progress in your browser |
+| **Event Stream** | See RBP:TaskStart, RBP:TestRun, RBP:TestResult events live |
+| **Debug Visibility** | Trace through test failures and errors |
+| **Multi-Session Support** | Run multiple RBP sessions with distinct session IDs |
+
+### Setup
+
+```bash
+# 1. Install PAI (if not already installed)
+git clone https://github.com/danielmiessler/Personal_AI_Infrastructure.git ~/PAI
+cd ~/PAI && ./install.sh
+
+# 2. RBP auto-detects PAI and emits events automatically
+# Events are written to: ~/.claude/history/raw-outputs/YYYY-MM/YYYY-MM-DD_all-events.jsonl
+
+# 3. Launch dashboard with /rbp:start or manually:
+~/.claude/observability/manage.sh start
+# Dashboard: http://localhost:5172
+```
+
+### Event Types
+
+| Event | Emitted When |
+|:------|:-------------|
+| `RBP:LoopStart` | Ralph begins execution |
+| `RBP:TaskStart` | A task is picked from `bd ready` |
+| `RBP:TaskProgress` | Task status changes (executing, iteration_complete) |
+| `RBP:TaskComplete` | Task closed with proof |
+| `RBP:TestRun` | Tests are about to run |
+| `RBP:TestResult` | Tests complete (includes exit code, output) |
+| `RBP:Error` | An error occurred |
+| `RBP:CodexReview` | Codex pre-flight review starts/completes |
+| `RBP:SpecParsed` | Spec parsed to Beads |
+| `RBP:LoopEnd` | Ralph loop completes |
+
+### Without PAI
+
+RBP works without PAI — observability events are simply not emitted. You can still monitor progress via:
+
+```bash
+# File-based logs
+tail -f scripts/rbp/progress.txt
+
+# Beads activity
+bd activity --follow
+
+# Task status
+bd status
 ```
 
 <br />
@@ -429,9 +674,13 @@ An agent can flip a boolean. It cannot fake a passing test.
 
 So I added test-gated closure. No task closes without proof. The script runs the tests — either they pass or the task stays open. The agent has no say in the matter.
 
+Then I realized: when a task fails, the agent needs to see what went wrong. So I added failure state injection. The previous attempt's notes are automatically injected into the retry prompt. Now agents can learn from their mistakes without human guidance.
+
+Finally, I made subtasks atomic. Each subtask is a separate bead with explicit dependencies, not just checklist items. This lets Ralph execute them sequentially with test verification after each one.
+
 **The RBP Stack is the result.**
 
-What started as a productivity hack became a verification-first autonomous development system. BMAD creates the stories. Beads tracks the state. Ralph drives the execution. Tests guard the gates.
+What started as a productivity hack became a verification-first autonomous development system. BMAD creates the stories. Beads tracks the state. Ralph drives the execution. Tests guard the gates. Failure notes teach the next attempt.
 
 Now I give it an Epic and walk away. Come back to verified, working code.
 
@@ -458,7 +707,9 @@ Now I give it an Epic and walk away. Come back to verified, working code.
 - [x] Codex pre-flight review integration
 - [x] UI auto-detection (Playwright)
 - [x] Execution sequencer for large stories
-- [ ] Real-time progress dashboard
+- [x] Real-time progress dashboard (PAI Observability integration)
+- [x] Failure state injection (previous attempt context)
+- [x] Atomic subtask creation with dependencies
 - [ ] Parallel task execution
 - [ ] Integration with more test frameworks
 

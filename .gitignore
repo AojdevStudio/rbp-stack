@@ -27,3 +27,6 @@ rbp/docs/recursive-agentic-architecture-by-gemini.md
 
 # Marketing (keep separate)
 marketing/
+
+# Local RBP state
+.rbp/

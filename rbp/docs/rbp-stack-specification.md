@@ -50,6 +50,7 @@ Long-running tasks exhaust context windows, causing:
 3. Playwright verification required for UI stories
 4. Execution Sequencer groups large stories into manageable phases
 5. Full audit trail via git-versioned `issues.jsonl`
+6. **Failure state injection**: Previous attempt notes are injected into next iteration's context
 
 ---
 
@@ -94,6 +95,7 @@ Long-running tasks exhaust context windows, causing:
 │              RALPH LOOP (scripts/rbp/)                       │
 │     Claude Code execution until bd ready returns nothing     │
 │        Execution Sequencer groups subtasks into phases       │
+│        Failure State Injection: Previous notes → Context     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -104,7 +106,8 @@ Long-running tasks exhaust context windows, causing:
 3. **BMAD workflows remain unchanged** - Use existing slash commands as-is
 4. **Test-gated closure** - `bd close` requires `bun test` to pass
 5. **Playwright-gated UI** - UI stories require Playwright verification
-6. **No atomizer needed** - 200k context fits all stories, but use Execution Sequencer for large ones
+6. **Failure state injection** - Previous attempt notes injected as context for retry attempts
+7. **No atomizer needed** - 200k context fits all stories, but use Execution Sequencer for large ones
 
 ---
 
@@ -125,12 +128,19 @@ Beads (issues.jsonl)
      ▼
 Ralph Loop executes task
      │
+     │ Injects previous failure notes if retry
+     │ (failure state injection for context)
+     ▼
+Implement task
+     │
      │ bun test + playwright (if UI)
      │ (verification required)
      ▼
-bd close (with proof)
+close-with-proof.sh
+     ├─ Tests pass? → bd close (with proof)
+     └─ Tests fail? → Append failure notes to bead
      │
-     │ bd ready (next task)
+     │ bd ready (next task or retry same task)
      ▼
 Loop until all beads closed
 ```
@@ -144,6 +154,7 @@ Loop until all beads closed
 | Agent marks `passes: true` | Agent must prove with test output |
 | Reinvents state management | Uses purpose-built tool |
 | Must sync two places | Single source of truth |
+| No failure context | Injects previous attempt notes for retry |
 
 ---
 
@@ -155,7 +166,7 @@ Loop until all beads closed
 |---------------|------------------|--------------|
 | Story | Parent Bead | 1 story = 1 parent bead |
 | Task (## Task N:) | Child Bead | 1 task = 1+ child beads |
-| Subtask (- [ ] N.N) | Atomic work unit | Grouped into execution phases |
+| Subtask (- [ ] N.N) | Atomic child bead | Chained with dependencies |
 | Housekeeping action | Child Bead | Explicit beads for status updates |
 
 ### BMAD Story Structure (from analysis)
@@ -183,11 +194,16 @@ As a **[role]**, I want **[feature]**, so that **[benefit]**.
 ```
 bd-a1b2 (Story: "4-2-admin-dashboard")
 ├── bd-a1b2.1 (Task 1: Create constants file - AC: 12)
-│   └── Subtasks: 1.1, 1.2 (execution phase 1)
-├── bd-a1b2.2 (Task 2: Admin layout structure - AC: 1, 5, 6)
-│   └── Subtasks: 2.1, 2.2 (execution phase 2)
-├── bd-a1b2.3 (Task 3: AdminSidebar - AC: 2, 4, 5, 10, 11, 13)
-│   └── Subtasks: 3.1-3.4 (execution phase 3)
+│   ├── bd-a1b2.1.1 (Subtask: 1.1)
+│   └── bd-a1b2.1.2 (Subtask: 1.2, depends on 1.1)
+├── bd-a1b2.2 (Task 2: Admin layout structure - AC: 1, 5, 6, depends on 1.2)
+│   ├── bd-a1b2.2.1 (Subtask: 2.1)
+│   └── bd-a1b2.2.2 (Subtask: 2.2, depends on 2.1)
+├── bd-a1b2.3 (Task 3: AdminSidebar - AC: 2, 4, 5, depends on 2.2)
+│   ├── bd-a1b2.3.1 (Subtask: 3.1)
+│   ├── bd-a1b2.3.2 (Subtask: 3.2, depends on 3.1)
+│   ├── bd-a1b2.3.3 (Subtask: 3.3, depends on 3.2)
+│   └── ...
 ├── ...
 ├── bd-a1b2.H1 (Housekeeping: Update sprint-status → in-progress)
 ├── bd-a1b2.H2 (Housekeeping: Update sprint-status → review)
@@ -206,11 +222,99 @@ bd-a1b2 (Story: "4-2-admin-dashboard")
   "parent": "bd-a1b2",
   "story_ref": "docs/bmm/implementation-artifacts/stories/story-4-2-admin-dashboard.md",
   "acceptance_criteria": ["AC1", "AC5", "AC6"],
-  "subtasks": ["2.1", "2.2"],
+  "subtasks": ["bd-a1b2.2.1", "bd-a1b2.2.2"],
   "requires_playwright": true,
-  "dependencies": ["bd-a1b2.1"],
-  "notes": ""
+  "dependencies": ["bd-a1b2.1.2"],
+  "notes": "FAILED: 2026-01-19 14:32:15\ntypecheck: PASS\nbun test: FAIL (exit code 1)\nplaywright: SKIPPED"
 }
+```
+
+---
+
+## Subtask Execution
+
+### Atomic Subtask Creation
+
+When a task contains subtasks, `parse-spec-to-beads.sh` creates them as **separate child beads with chained dependencies**:
+
+```bash
+# Subtask 1: No dependencies
+bd create "Subtask 1.1" --parent "$TASK_BEAD" -l "subtask"
+
+# Subtask 2: Depends on Subtask 1
+bd create "Subtask 1.2" --parent "$TASK_BEAD" -l "subtask" --depends "subtask-1-1-bead-id"
+
+# Subtask 3: Depends on Subtask 2
+bd create "Subtask 1.3" --parent "$TASK_BEAD" -l "subtask" --depends "subtask-1-2-bead-id"
+
+# Task depends on final subtask
+bd update "$TASK_BEAD" --depends "subtask-1-3-bead-id"
+```
+
+### Benefits of Atomic Subtasks
+
+- **Clear sequencing**: Each subtask has explicit dependencies
+- **Granular tracking**: Each subtask is independently verifiable
+- **Failure recovery**: If subtask N fails, only that subtask retries
+- **Optimal context**: Ralph executes one subtask per iteration
+
+---
+
+## Failure State Injection
+
+### How It Works
+
+When a task is retried after test failure:
+
+1. `close-with-proof.sh` appends failure notes to the bead (test output, exit codes, etc.)
+2. Ralph reads these notes via `bd show <task-id> --json`
+3. The notes are injected into the prompt as "Previous Attempt Failed" section
+4. Agent can see exactly what failed and fix it
+
+### Implementation
+
+In `ralph.sh` (lines 217-237):
+
+```bash
+# Fetch previous notes for failure state injection
+local previous_notes=""
+if command -v jq &>/dev/null && [ -n "$task_id" ] && [ "$task_id" != "unknown" ]; then
+  cd "$PROJECT_ROOT"
+  previous_notes=$(bd show "$task_id" --json 2>/dev/null | jq -r '.notes // empty' || echo "")
+fi
+
+# Inject failure context if previous notes exist
+local failure_context=""
+if [ -n "$previous_notes" ]; then
+  failure_context="
+
+## Previous Attempt Failed
+
+The last attempt encountered these issues:
+
+$previous_notes
+
+Fix the issues above before proceeding.
+"
+fi
+
+prompt="$prompt$failure_context
+
+## Current Task from Beads
+
+\`\`\`
+$task
+\`\`\`"
+```
+
+### In close-with-proof.sh (lines 200-203)
+
+```bash
+else
+  # Append failure notes to bead for next iteration's context
+  TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+  FAILURE_NOTE="FAILED: $TIMESTAMP\n$PROOF_SUMMARY"
+  bd update "$BEAD_ID" --note "$(echo -e "$FAILURE_NOTE")" 2>/dev/null || true
 ```
 
 ---
@@ -285,18 +389,22 @@ Layer 1: Objective Acceptance Criteria
 Layer 2: Protocol Mandate
   └─ Worker instructions require: Implement → Test → Verify → Close
 
-Layer 3: Test Gating (CRITICAL)
+Layer 3: Failure State Injection
+  └─ Previous attempt notes injected for retry context
+  └─ Agent cannot claim "unknown error" on retry
+
+Layer 4: Test Gating (CRITICAL)
   └─ bd close REQUIRES test output as proof
   └─ No checkbox marking - only bd close counts
 
-Layer 4: Playwright Gating (UI stories)
+Layer 5: Playwright Gating (UI stories)
   └─ UI acceptance criteria require: "playwright test passes"
   └─ Visual verification, not just unit tests
 
-Layer 5: Code Review
+Layer 6: Code Review
   └─ Separate adversarial agent validates all ACs
 
-Layer 6: Audit Trail
+Layer 7: Audit Trail
   └─ All state changes in git-versioned issues.jsonl
 ```
 
@@ -316,6 +424,9 @@ REQUIRES_PLAYWRIGHT=$(echo "$BEAD_JSON" | jq -r '.requires_playwright // false')
 echo "Running bun test..."
 if ! bun run test 2>&1 | tee /tmp/test-output.txt; then
   echo "FAILED: Tests did not pass. Bead remains open."
+  # Append failure notes for next iteration
+  FAILURE_NOTE="FAILED: $(date)\n$(cat /tmp/test-output.txt)"
+  bd update "$BEAD_ID" --note "$(echo -e "$FAILURE_NOTE")" 2>/dev/null || true
   exit 1
 fi
 
@@ -362,168 +473,58 @@ test('AC4: Sidebar collapses with 200ms animation', async ({ page }) => {
 
 ### ralph.sh (Claude Code Version)
 
+The Ralph execution loop implements:
+
+1. **Query Beads** for next ready task
+2. **Inject failure context** if task was previously attempted
+3. **Execute via Claude Code**
+4. **Check for completion signals** (`<rbp:complete/>` or `<rbp:error>`)
+5. **Loop until all tasks closed**
+
+Key features (lines 217-237 of ralph.sh):
+
 ```bash
-#!/usr/bin/env bash
-# scripts/rbp/ralph.sh
-# Iterates until all Beads are closed
+# Fetch previous notes for failure state injection
+local previous_notes=""
+if command -v jq &>/dev/null && [ -n "$task_id" ] && [ "$task_id" != "unknown" ]; then
+  cd "$PROJECT_ROOT"
+  previous_notes=$(bd show "$task_id" --json 2>/dev/null | jq -r '.notes // empty' || echo "")
+fi
 
-set -e
+# Inject failure context if previous notes exist
+local failure_context=""
+if [ -n "$previous_notes" ]; then
+  failure_context="
 
-MAX_ITERATIONS=${1:-50}
-PROMPT_FILE="scripts/rbp/prompt.md"
-PROGRESS_FILE="scripts/rbp/progress.txt"
+## Previous Attempt Failed
 
-echo "═══════════════════════════════════════════════════════════════"
-echo "  RBP STACK - RALPH LOOP (Claude Code)"
-echo "  Max iterations: $MAX_ITERATIONS"
-echo "═══════════════════════════════════════════════════════════════"
+The last attempt encountered these issues:
 
-for i in $(seq 1 $MAX_ITERATIONS); do
-  echo ""
-  echo "═══ Iteration $i of $MAX_ITERATIONS ═══"
+$previous_notes
 
-  # Query Beads for next ready task
-  READY_TASK=$(bd ready --json 2>/dev/null | jq -r '.[0] // empty')
-
-  if [ -z "$READY_TASK" ]; then
-    OPEN_COUNT=$(bd list --status open --json 2>/dev/null | jq 'length')
-
-    if [ "$OPEN_COUNT" -eq 0 ]; then
-      echo ""
-      echo "═══════════════════════════════════════════════════════════════"
-      echo "  ALL BEADS CLOSED - STORY COMPLETE"
-      echo "  <promise>COMPLETE</promise>"
-      echo "═══════════════════════════════════════════════════════════════"
-      exit 0
-    else
-      echo "Tasks are open but blocked. Manual intervention required."
-      bd list --status open
-      exit 1
-    fi
-  fi
-
-  # Extract task details
-  TASK_ID=$(echo "$READY_TASK" | jq -r '.id')
-  TASK_TITLE=$(echo "$READY_TASK" | jq -r '.title')
-  STORY_REF=$(echo "$READY_TASK" | jq -r '.story_ref')
-  REQUIRES_PLAYWRIGHT=$(echo "$READY_TASK" | jq -r '.requires_playwright // false')
-
-  echo "Task: $TASK_TITLE"
-  echo "Bead: $TASK_ID"
-  echo "Playwright Required: $REQUIRES_PLAYWRIGHT"
-
-  # Check if multi-phase execution needed
-  PHASE_INFO=$(scripts/rbp/sequencer.sh "$TASK_ID")
-  echo "Execution: $PHASE_INFO"
-
-  # Mark bead in progress
-  bd update "$TASK_ID" --status in_progress 2>/dev/null || true
-
-  # Build prompt with task context
-  PROMPT=$(cat <<EOF
-$(cat "$PROMPT_FILE")
-
----
-
-## Current Task
-
-**Bead ID**: $TASK_ID
-**Title**: $TASK_TITLE
-**Story**: $STORY_REF
-**Playwright Required**: $REQUIRES_PLAYWRIGHT
-**Execution Mode**: $PHASE_INFO
-
-### Acceptance Criteria
-$(bd show "$TASK_ID" --json 2>/dev/null | jq -r '.acceptance_criteria | join("\n- ")' || echo "See story file")
-
-### Subtasks
-$(bd show "$TASK_ID" --json 2>/dev/null | jq -r '.subtasks | join("\n- ")' || echo "See story file")
-
-### Notes from Previous Iterations
-$(bd show "$TASK_ID" --json 2>/dev/null | jq -r '.notes // "None"')
-
----
-
-## Progress Log (recent)
-
-$(tail -30 "$PROGRESS_FILE" 2>/dev/null || echo "No previous progress")
-EOF
-)
-
-  # Execute Claude Code (pipe prompt to claude CLI)
-  echo "$PROMPT" | claude --print 2>&1 | tee -a "$PROGRESS_FILE"
-
-  # Brief pause between iterations
-  sleep 2
-done
-
-echo ""
-echo "═══════════════════════════════════════════════════════════════"
-echo "  MAX ITERATIONS REACHED"
-echo "═══════════════════════════════════════════════════════════════"
-exit 1
+Fix the issues above before proceeding.
+"
+fi
 ```
 
 ### prompt.md
 
+The RBP Execution Protocol includes enforcement and consequences (lines 87-100):
+
 ```markdown
-# RBP Agent Instructions
+## Enforcement and Consequences
 
-You are an autonomous coding agent in the RBP Stack, powered by Claude Code.
+**CRITICAL: Understanding the stakes of non-compliance**
 
-## Protocol
+1. **False Completion Claims**: If you output `<rbp:complete/>` without running close-with-proof.sh, your work will be discarded and re-executed by the next iteration. The task will remain open indefinitely.
 
-1. **Check Bead**: Read the current task from Beads (provided below)
-2. **Load Context**: Read the story file for full acceptance criteria
-3. **Implement**: Complete the task following existing code patterns
-4. **Test**: Run `bun run test`
-5. **Playwright** (if required): Run `bunx playwright test`
-6. **Close Bead**: Run `scripts/rbp/close-with-proof.sh <BEAD_ID>`
-7. **Continue**: End response (next iteration picks up next task)
+2. **Test Verification Requirement**: Tasks without test proof will remain open indefinitely until properly verified. Ralph will keep attempting the same task in subsequent iterations until tests pass.
 
-## Critical Rules
+3. **Failure Recovery**: On test failure, fix the code and retry—do not give up or skip to other tasks. The notes from your failed attempt will be injected into the next iteration's prompt as context.
 
-- ONLY work on the task specified in this prompt
-- MUST run tests before attempting to close bead
-- DO NOT mark story checkboxes - only `bd close` matters
-- If tests fail, FIX THE CODE and re-test (do not skip)
-- For multi-phase tasks, commit after each phase
+4. **Accountability**: Every closure is recorded in git with test output as proof. Claiming completion without verification creates technical debt and wastes iteration cycles.
 
-## Verification Commands
-
-```bash
-# Unit/integration tests
-bun run test
-
-# Playwright (if requires_playwright: true)
-bunx playwright test
-
-# Close bead with proof
-scripts/rbp/close-with-proof.sh <BEAD_ID>
-```
-
-## Multi-Phase Execution
-
-If the task shows `MULTI_PHASE:N`, execute in phases:
-
-1. Implement subtasks for phase 1
-2. Run tests
-3. Commit: `git commit -m "feat(scope): phase 1 - description"`
-4. Proceed to phase 2
-5. Repeat until all phases complete
-6. Close bead with proof
-
-## Completion Signal
-
-When you successfully close a bead, the loop will automatically:
-1. Query `bd ready` for the next task
-2. Start a fresh iteration with that task
-
-If ALL beads are closed, the loop exits with `<promise>COMPLETE</promise>`.
-
-## Begin
-
-Read the story file at the path specified above, then implement the current task.
+**The protocol is not optional.** Following these steps ensures quality, maintains system trust, and prevents infinite retry loops.
 ```
 
 ---
@@ -593,6 +594,7 @@ your-project/
 │   ├── sequencer.sh               # Execution phase grouping
 │   ├── close-with-proof.sh        # Test-gated bead closure
 │   ├── parse-story-to-beads.sh    # One-time story → beads conversion
+│   ├── parse-spec-to-beads.sh     # Spec → beads with atomic subtasks
 │   ├── show-active-task.sh
 │   └── save-progress-to-beads.sh
 │
@@ -689,7 +691,7 @@ scripts/rbp/ralph.sh
 
 ```bash
 # Ralph automatically resumes from where it left off
-# bd ready returns the next unblocked task
+# bd ready returns the next unblocked task (or retry if previous failed)
 scripts/rbp/ralph.sh
 ```
 
@@ -725,6 +727,10 @@ watch -n 5 "bd list --json | jq '.[] | {id, title, status}'"
 - Added: Playwright verification required for UI stories
 - Added: Test-gated closure with proof
 - Added: Multi-phase commit strategy
+- Added: Failure state injection (previous attempt notes in context)
+- Added: Atomic subtask creation with dependency chaining
+- Added: Enforcement and Consequences section in protocol
+- Added: Failure note appending in close-with-proof.sh
 - Removed: PostToolUse sync hook (no longer needed)
 - Removed: story.json concept (use Beads directly)
 - Updated: Story analysis from 76 real BMAD stories

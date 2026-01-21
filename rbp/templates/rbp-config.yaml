@@ -69,8 +69,15 @@ ui_detection:
     - "CSS"
     - "frontend"
 
-# BMAD workflow command paths
+# BMAD configuration
 bmad:
+  # Directory paths (auto-detected if not set)
+  epics_dir: ""           # e.g., "docs/bmm/tech-specs" or "_bmad/epics"
+  epic_pattern: ""        # e.g., "tech-spec-epic" or "epic"
+  stories_dir: ""         # e.g., "_bmad/implementation-artifacts/stories"
+  arch_dir: ""            # e.g., "_bmad/architecture"
+
+  # Workflow command paths
   create_story: "/bmad:bmm:workflows:create-story"
   dev_story: "/bmad:bmm:workflows:dev-story"
   code_review: "/bmad:bmm:workflows:code-review"

@@ -1,0 +1,19 @@
+{
+  "name": "rbp-stack",
+  "version": "3.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "bun build ./lib/src/index.ts --outdir ./lib/dist --target bun",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "commander": "^12.0.0",
+    "yaml": "^2.8.2",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.4.0"
+  }
+}

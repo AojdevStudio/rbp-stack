@@ -106,13 +106,13 @@ echo -e "${YELLOW}Scripts:${NC}"
 REQUIRED_SCRIPTS=(
   "ralph.sh"
   "prompt.md"
-  "close-with-proof.sh"
   "sequencer.sh"
   "parse-story-to-beads.sh"
   "show-active-task.sh"
   "save-progress-to-beads.sh"
   "parse-spec-to-beads.sh"
-  "ralph-execute.sh"
+  "start.sh"
+  "create-story-autonomous.sh"
 )
 
 for script in "${REQUIRED_SCRIPTS[@]}"; do
@@ -122,6 +122,17 @@ for script in "${REQUIRED_SCRIPTS[@]}"; do
     check_fail "$script missing"
   fi
 done
+
+echo ""
+
+# TypeScript CLI
+echo -e "${YELLOW}TypeScript CLI:${NC}"
+
+if [ -f "$PROJECT_ROOT/scripts/rbp/lib/dist/index.js" ]; then
+  check_pass "lib/dist/index.js (compiled CLI)"
+else
+  check_fail "lib/dist/index.js missing (run 'bun run build' in rbp/)"
+fi
 
 echo ""
 
@@ -207,7 +218,13 @@ if [ $FAIL_COUNT -eq 0 ]; then
   echo ""
   echo "  Workflow B - Quick-Plan Specs:"
   echo "    1. Create spec: /quick-plan \"feature description\""
-  echo "    2. Execute: ./scripts/rbp/ralph-execute.sh specs/<spec>.md"
+  echo "    2. Execute: ./scripts/rbp/ralph.sh exec-spec specs/<spec>.md"
+  echo ""
+  echo "  CLI Commands:"
+  echo "    ./scripts/rbp/ralph.sh              # Run main loop"
+  echo "    ./scripts/rbp/ralph.sh status       # Show status"
+  echo "    ./scripts/rbp/ralph.sh close <id>   # Close task (test-gated)"
+  echo "    ./scripts/rbp/ralph.sh exec-spec    # Execute spec file"
 else
   echo -e "${RED}RBP Stack: NOT READY${NC}"
   echo -e "$PASS_COUNT passed, ${RED}$FAIL_COUNT failed${NC}, $WARN_COUNT warnings"

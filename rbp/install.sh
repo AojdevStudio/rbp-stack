@@ -105,27 +105,53 @@ check_prerequisites() {
   echo ""
 }
 
-# Step 2: Install scripts
+# Step 2: Build TypeScript
+build_typescript() {
+  print_step "Building TypeScript CLI..."
+
+  cd "$SCRIPT_DIR"
+
+  # Install dependencies
+  if [ ! -d "node_modules" ]; then
+    echo "  Installing dependencies..."
+    bun install --silent
+  fi
+
+  # Build the TypeScript
+  echo "  Compiling TypeScript..."
+  bun run build
+
+  if [ -f "$SCRIPT_DIR/lib/dist/index.js" ]; then
+    print_success "TypeScript CLI built successfully"
+  else
+    print_error "Failed to build TypeScript CLI"
+    exit 1
+  fi
+
+  cd - > /dev/null
+  echo ""
+}
+
+# Step 3: Install scripts
 install_scripts() {
   print_step "Installing scripts to $TARGET_DIR/scripts/rbp/..."
 
   mkdir -p "$TARGET_DIR/scripts/rbp"
 
-  # Copy all scripts
-  cp "$SCRIPT_DIR/scripts/ralph.sh" "$TARGET_DIR/scripts/rbp/"
+  # Copy TypeScript CLI and wrapper
+  cp "$SCRIPT_DIR/ralph.sh" "$TARGET_DIR/scripts/rbp/"
+  mkdir -p "$TARGET_DIR/scripts/rbp/lib/dist"
+  cp "$SCRIPT_DIR/lib/dist/index.js" "$TARGET_DIR/scripts/rbp/lib/dist/"
+
+  # Copy supporting scripts (some still in bash)
+  cp "$SCRIPT_DIR/scripts/start.sh" "$TARGET_DIR/scripts/rbp/"
   cp "$SCRIPT_DIR/scripts/prompt.md" "$TARGET_DIR/scripts/rbp/"
-  cp "$SCRIPT_DIR/scripts/close-with-proof.sh" "$TARGET_DIR/scripts/rbp/"
   cp "$SCRIPT_DIR/scripts/sequencer.sh" "$TARGET_DIR/scripts/rbp/"
   cp "$SCRIPT_DIR/scripts/parse-story-to-beads.sh" "$TARGET_DIR/scripts/rbp/"
+  cp "$SCRIPT_DIR/scripts/parse-spec-to-beads.sh" "$TARGET_DIR/scripts/rbp/"
+  cp "$SCRIPT_DIR/scripts/create-story-autonomous.sh" "$TARGET_DIR/scripts/rbp/"
   cp "$SCRIPT_DIR/scripts/show-active-task.sh" "$TARGET_DIR/scripts/rbp/"
   cp "$SCRIPT_DIR/scripts/save-progress-to-beads.sh" "$TARGET_DIR/scripts/rbp/"
-
-  # Quick-plan integration scripts
-  cp "$SCRIPT_DIR/scripts/parse-spec-to-beads.sh" "$TARGET_DIR/scripts/rbp/"
-  cp "$SCRIPT_DIR/scripts/ralph-execute.sh" "$TARGET_DIR/scripts/rbp/"
-
-  # Observability integration
-  cp "$SCRIPT_DIR/scripts/emit-event.sh" "$TARGET_DIR/scripts/rbp/"
 
   # Make scripts executable
   chmod +x "$TARGET_DIR/scripts/rbp/"*.sh
@@ -134,7 +160,7 @@ install_scripts() {
   echo ""
 }
 
-# Step 3: Install commands
+# Step 4: Install commands
 install_commands() {
   print_step "Installing slash commands to $TARGET_DIR/.claude/commands/..."
 
@@ -157,7 +183,7 @@ install_commands() {
   echo ""
 }
 
-# Step 4: Setup hooks in settings.json
+# Step 5: Setup hooks in settings.json
 install_hooks() {
   print_step "Configuring Claude Code hooks..."
 
@@ -192,7 +218,7 @@ install_hooks() {
   echo ""
 }
 
-# Step 5: Initialize beads if needed
+# Step 6: Initialize beads if needed
 init_beads() {
   print_step "Checking beads initialization..."
 
@@ -213,7 +239,7 @@ init_beads() {
   echo ""
 }
 
-# Step 6: Create config if not exists
+# Step 7: Create config if not exists
 create_config() {
   print_step "Setting up configuration..."
 
@@ -234,7 +260,7 @@ create_config() {
   echo ""
 }
 
-# Step 7: Copy validator
+# Step 8: Copy validator
 copy_validator() {
   print_step "Installing validator..."
 
@@ -257,15 +283,18 @@ print_summary() {
   echo "  1. Review configuration: $TARGET_DIR/rbp-config.yaml"
   echo "  2. Run validation: $TARGET_DIR/scripts/rbp/validate.sh"
   echo ""
-  echo "Workflow A - BMAD Stories:"
-  echo "  3a. Create a story: /bmad:bmm:workflows:create-story"
-  echo "  4a. Convert to beads: ./scripts/rbp/parse-story-to-beads.sh <story.md>"
-  echo "  5a. Start execution: ./scripts/rbp/ralph.sh"
+  echo "Start autonomous execution:"
+  echo "  ./scripts/rbp/start.sh"
   echo ""
-  echo "Workflow B - Quick-Plan Specs:"
-  echo "  3b. Create a spec: /quick-plan \"feature description\""
-  echo "  4b. Execute with RBP: ./scripts/rbp/ralph-execute.sh specs/<spec>.md"
-  echo "      (Includes optional Codex review + Beads + test-gated execution)"
+  echo "  That's it. One script. It will:"
+  echo "    - Detect project type (BMAD or Quick-plan)"
+  echo "    - Auto-create stories from epics (headless)"
+  echo "    - Parse to beads tasks"
+  echo "    - Run ralph loop until complete"
+  echo ""
+  echo "  Or run components separately:"
+  echo "    ./scripts/rbp/ralph.sh          # Just the execution loop"
+  echo "    ./scripts/rbp/create-story-autonomous.sh  # Create story only"
   echo ""
   echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
 }
@@ -278,6 +307,7 @@ main() {
   echo ""
 
   check_prerequisites
+  build_typescript
   install_scripts
   install_commands
   install_hooks

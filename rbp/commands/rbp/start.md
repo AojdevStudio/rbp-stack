@@ -1,7 +1,8 @@
 ---
-allowed-tools: Bash, Read, Glob, AskUserQuestion, Write
+allowed-tools: Bash, Read, Glob
 description: Start the RBP autonomous execution loop
 argument-hint: [spec-file | max-iterations]
+context: fork
 ---
 
 # /rbp:start
@@ -9,6 +10,33 @@ argument-hint: [spec-file | max-iterations]
 Start the RBP autonomous execution loop to implement tasks with test-gated verification.
 
 **Runs in a forked context window** - your main session stays free.
+
+## CRITICAL: Headless Execution
+
+This command MUST run without human interaction. NEVER ask questions - make autonomous decisions:
+
+| Situation | Autonomous Action |
+|-----------|-------------------|
+| Ambiguous project type | Prefer BMAD if both exist |
+| Script returns error | Log error, report to user, stop |
+| Epic complete (exit 3) | Report completion summary, stop |
+| Missing dependencies | Log what's missing, stop |
+| Tests fail | Keep task open, continue to next |
+
+## CRITICAL: Use mgrep for Exploration
+
+**Minimize tool calls with semantic search.** Use mgrep instead of multiple Grep/Glob calls.
+
+```bash
+# Find project structure with natural language
+mgrep search "BMAD configuration files"
+mgrep search "epic definitions and stories"
+
+# For directory checks, use simple bash (faster)
+[ -d "docs/bmm" ] && echo "BMAD project"
+```
+
+**Rule:** One mgrep query replaces 10+ Grep/Glob calls. Use it.
 
 ## Variables
 
@@ -23,7 +51,7 @@ PROGRESS_FILE: scripts/rbp/progress.txt
 
 | Source | Parser | Executor | Features |
 |--------|--------|----------|----------|
-| Quick-plan spec (`specs/*.md`) | `parse-spec-to-beads.sh` | `ralph-execute.sh` | Codex pre-flight review |
+| Quick-plan spec (`specs/*.md`) | `parse-spec-to-beads.sh` | `ralph.sh exec-spec` | Codex pre-flight review |
 | BMAD story (`stories/*.md`) | `parse-story-to-beads.sh` | `ralph.sh` | Direct execution |
 
 **Detection logic:**
@@ -71,33 +99,48 @@ Before starting execution, check for PAI Observability integration:
 
 ### If NO tasks available:
 
-3. **Auto-discover specs/stories** - Look for files:
+3. **Detect project type** by checking for BMAD artifacts:
+   - Look for `docs/bmm/` or `docs/bmad/` directories → BMAD project
+   - Look for `specs/*.md` with `<!-- RBP-TASKS-START -->` → Quick-plan project
+   - If both exist, prefer BMAD if epic/stories structure is present
+
+4. **For BMAD projects - Auto-continue the epic:**
+   a. Find the current epic branch (e.g., `epic-4/admin-dashboard`)
+   b. **Run autonomous story creation:**
+      ```bash
+      STORY_FILE=$(./scripts/rbp/create-story-autonomous.sh 2>/dev/null)
+      EXIT_CODE=$?
+      ```
+   c. **Handle exit codes:**
+      - `0`: Story created at `$STORY_FILE`, continue to parse
+      - `1`: Config error - report "No BMAD config found" and stop
+      - `2`: No epic found - report "No epic detected" and stop
+      - `3`: Epic complete - report completion summary and stop
+   d. **Parse to beads and execute:**
+      ```bash
+      ./scripts/rbp/parse-story-to-beads.sh "$STORY_FILE"
+      ./scripts/rbp/ralph.sh
+      ```
+   e. Loop back to step 1 (check for more tasks)
+
+5. **For Quick-plan projects:**
    - Check if ARG1 is a file path (ends in .md) → use that file
-   - Otherwise, search common locations:
-     - `specs/*.md` (quick-plan)
-     - `stories/*.md` (BMAD)
-     - `docs/specs/*.md`
-     - `docs/stories/*.md`
-   - Use Glob tool to find files
+   - Otherwise, find specs with `<!-- RBP-TASKS-START -->` markers
+   - If found: Run `./scripts/rbp/ralph.sh exec-spec <spec-file>`
+   - If not found: Report "No actionable specs found" and stop
 
-4. **If file(s) found:**
-   - Show the file(s) found
-   - Ask user which to use (if multiple)
-   - **Detect workflow type** using detection logic above
-   - For quick-plan: Run `./rbp/scripts/ralph-execute.sh <spec-file>`
-   - For BMAD: Run `./rbp/scripts/parse-story-to-beads.sh <story-file>` then `./rbp/scripts/ralph.sh`
-   - Run `bd ready` to confirm tasks were created
-
-5. **If NO file found:**
-   - Report "No tasks in beads and no spec/story files found"
-   - Suggest: "Create a spec with /quick-plan or a story with BMAD"
+6. **If neither project type detected:**
+   - Report "No BMAD epic or quick-plan specs found"
+   - Suggest: "Initialize with BMAD or create a spec with /quick-plan"
    - Stop
 
 ### If tasks ARE available:
 
-6. Ask user: "Tasks exist. Run quick-plan workflow (with Codex) or BMAD workflow (direct)?"
-7. Execute the selected workflow
+7. **Auto-detect executor based on project type:**
+   - BMAD project → Run `./scripts/rbp/ralph.sh`
+   - Quick-plan project → Run `./scripts/rbp/ralph.sh` (same command, spec-aware)
 8. Monitor output for completion or errors
+9. Loop back to step 1 when tasks complete (up to MAX_ITERATIONS)
 
 ## Report
 
