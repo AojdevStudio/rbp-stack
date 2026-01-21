@@ -9,8 +9,8 @@ Verify the RBP Stack is properly installed with all prerequisites, scripts, and 
 
 ## Variables
 
-RALPH_CLI: scripts/rbp/ralph.sh
-VALIDATOR: scripts/rbp/validate.sh
+RALPH_CLI: bun ./rbp/lib/src/index.ts
+VALIDATOR: rbp/validate.sh
 CONFIG_FILE: rbp-config.yaml
 
 ## Workflow
@@ -23,7 +23,7 @@ CONFIG_FILE: rbp-config.yaml
    - `bun` (JavaScript runtime)
    - `claude` (Claude Code CLI)
 3. Check directory structure:
-   - `scripts/rbp/` exists with `ralph.sh` and `lib/dist/index.js`
+   - `rbp/lib/src/index.ts` exists (TypeScript CLI entry point)
    - `.claude/commands/rbp/` exists
    - `.beads/` exists
 4. Check configuration:
@@ -41,8 +41,7 @@ Prerequisites:
 - [✓/✗] claude CLI
 
 Structure:
-- [✓/✗] scripts/rbp/ralph.sh
-- [✓/✗] scripts/rbp/lib/dist/index.js
+- [✓/✗] rbp/lib/src/index.ts
 - [✓/✗] .claude/commands/rbp/
 - [✓/✗] .beads/
 

@@ -4,6 +4,7 @@ import type { RbpConfig } from "../config/types";
 import { logger } from "../observability/logger";
 import { emitWorkflowStart, emitWorkflowComplete, emitTaskStart, emitTaskComplete, emitTaskFailed } from "../observability/events";
 import { createError, ErrorCodes, type RbpError } from "../utils/errors";
+import { findProjectRoot, findSprintStatusPath } from "../utils/project-detector";
 import {
   invokeSlashCommand as invokeCliSlashCommand,
   checkClaudeInstalled,
@@ -159,7 +160,8 @@ export async function runBmadWorkflow(options: BmadWorkflowOptions): Promise<Bma
     autoSave = true,
   } = options;
 
-  const sprintStatusPath = options.sprintStatusPath ?? `${process.cwd()}/docs/bmm/sprint-status.yaml`;
+  const projectRoot = findProjectRoot();
+  const sprintStatusPath = options.sprintStatusPath ?? findSprintStatusPath(projectRoot) ?? `${projectRoot}/docs/bmm/sprint-status.yaml`;
 
   let storiesCompleted = 0;
   let iteration = 0;

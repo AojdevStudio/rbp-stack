@@ -1,6 +1,11 @@
-import { describe, test, expect } from "bun:test";
-import { execSpecCommandDef, type ExecSpecOptions } from "../../lib/src/commands/exec-spec";
+import { describe, test, expect, beforeEach, afterEach, spyOn } from "bun:test";
+import { execSpecCommandDef, execSpecCommand, type ExecSpecOptions } from "../../lib/src/commands/exec-spec";
 import { RbpConfigSchema } from "../../lib/src/config/schema";
+import * as cli from "../../lib/src/cli";
+import * as beadsWorkflow from "../../lib/src/workflows/beads";
+import * as codexWorkflow from "../../lib/src/workflows/codex";
+import * as specParser from "../../lib/src/parsers/spec-to-beads";
+import * as fs from "fs";
 
 describe("execSpecCommandDef configuration", () => {
   test("has correct name", () => {
@@ -224,5 +229,104 @@ describe("exec-spec option precedence", () => {
       : config.execution.max_iterations;
 
     expect(maxIterations).toBe(30);
+  });
+});
+
+describe("execSpecCommand dry-run behavior", () => {
+  const mockConfig = RbpConfigSchema.parse({
+    project: { name: "test-project" },
+    execution: { max_iterations: 10, iteration_delay: 0 },
+    verification: {
+      require_tests: true,
+      test_command: "bun test",
+    },
+    codex: { skip_by_default: false },
+    paths: { specs: "specs" },
+  });
+
+  let getGlobalOptionsSpy: ReturnType<typeof spyOn>;
+  let getConfigSpy: ReturnType<typeof spyOn>;
+  let parseMaxIterationsSpy: ReturnType<typeof spyOn>;
+  let existsSyncSpy: ReturnType<typeof spyOn>;
+  let runBeadsWorkflowSpy: ReturnType<typeof spyOn>;
+  let runCodexReviewSpy: ReturnType<typeof spyOn>;
+  let parseSpecToBeadsSpy: ReturnType<typeof spyOn>;
+
+  beforeEach(() => {
+    getGlobalOptionsSpy = spyOn(cli, "getGlobalOptions").mockReturnValue({});
+    getConfigSpy = spyOn(cli, "getConfig").mockReturnValue(mockConfig);
+    parseMaxIterationsSpy = spyOn(cli, "parseMaxIterations").mockReturnValue(10);
+    existsSyncSpy = spyOn(fs, "existsSync").mockReturnValue(true);
+    runBeadsWorkflowSpy = spyOn(beadsWorkflow, "runBeadsWorkflow").mockResolvedValue({
+      success: true,
+      tasksCompleted: 0,
+      tasksFailed: 0,
+      iterations: 0,
+    });
+    runCodexReviewSpy = spyOn(codexWorkflow, "runCodexReview").mockResolvedValue({
+      skipped: false,
+    });
+    parseSpecToBeadsSpy = spyOn(specParser, "parseSpecToBeads").mockResolvedValue({
+      success: true,
+      tasksCreated: 5,
+    });
+  });
+
+  afterEach(() => {
+    getGlobalOptionsSpy.mockRestore();
+    getConfigSpy.mockRestore();
+    parseMaxIterationsSpy.mockRestore();
+    existsSyncSpy.mockRestore();
+    runBeadsWorkflowSpy.mockRestore();
+    runCodexReviewSpy.mockRestore();
+    parseSpecToBeadsSpy.mockRestore();
+  });
+
+  test("dry-run does not execute codex review", async () => {
+    await execSpecCommand("test-spec.md", { dryRun: true });
+
+    expect(runCodexReviewSpy).not.toHaveBeenCalled();
+  });
+
+  test("dry-run does not parse spec to beads", async () => {
+    await execSpecCommand("test-spec.md", { dryRun: true });
+
+    expect(parseSpecToBeadsSpy).not.toHaveBeenCalled();
+  });
+
+  test("dry-run does not execute beads workflow", async () => {
+    await execSpecCommand("test-spec.md", { dryRun: true });
+
+    expect(runBeadsWorkflowSpy).not.toHaveBeenCalled();
+  });
+
+  test("without dry-run, codex review is executed (when not skipped)", async () => {
+    const processExitSpy = spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("process.exit called");
+    });
+
+    try {
+      await execSpecCommand("test-spec.md", { dryRun: false, skipReview: false });
+    } catch (e) {
+      // Expected - process.exit was called
+    }
+
+    expect(runCodexReviewSpy).toHaveBeenCalled();
+    processExitSpy.mockRestore();
+  });
+
+  test("without dry-run, beads workflow is executed", async () => {
+    const processExitSpy = spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("process.exit called");
+    });
+
+    try {
+      await execSpecCommand("test-spec.md", { dryRun: false, skipReview: true });
+    } catch (e) {
+      // Expected - process.exit was called
+    }
+
+    expect(runBeadsWorkflowSpy).toHaveBeenCalled();
+    processExitSpy.mockRestore();
   });
 });

@@ -87,7 +87,7 @@ More content`;
         continue;
       }
       if (inSubtasks) {
-        const match = line.match(/^\s*-\s*\[[ x]\]\s*(.+)$/);
+        const match = line.match(/^\s*-\s*\[[ xX]\]\s*(.+)$/);
         if (match) {
           subtasks.push(match[1]);
         }

@@ -1,6 +1,6 @@
 # RBP Stack
 
-**Last Updated:** January 9, 2026
+**Last Updated:** January 20, 2026
 
 *For Claude Code only*: ALWAYS use the `AskUserQuestion` tool when posing questions to the user.
 Autonomous Epic implementation system. Test-gated verification prevents false completion claims.
@@ -26,6 +26,7 @@ bd sync            # Sync with git
 ```
 rbp/                    # Installable package (main deliverable)
 ├── scripts/            # Core scripts (ralph.sh, close-with-proof.sh, etc.)
+├── lib/src/            # TypeScript CLI source (commands, workflows, config)
 ├── commands/rbp/       # Slash commands (/rbp:start, /rbp:status, /rbp:validate)
 ├── templates/          # Config templates
 ├── install.sh          # Installer
@@ -45,9 +46,57 @@ marketing/              # Twitter thread, LinkedIn narrative
 | `rbp/scripts/parse-spec-to-beads.sh` | Converts quick-plan spec to Beads tasks |
 | `rbp/scripts/ralph-execute.sh` | Quick-plan workflow with optional Codex review |
 
+## TypeScript CLI (Ralph)
+
+The core execution engine is written in TypeScript using Commander.js. The CLI is named `ralph` and provides autonomous task execution with test verification.
+
+### Global Options
+
+Available on all commands:
+
+```bash
+ralph --config <path>     # Custom config file path
+ralph --verbose           # Increase output verbosity (debug level)
+ralph --quiet             # Decrease output verbosity (warn level)
+ralph --json-errors       # Output errors as JSON (default: true)
+ralph --no-json-errors    # Output errors as human-readable text
+```
+
+### Commands
+
+**run** (default)
+```bash
+ralph run                        # Run the execution loop
+ralph run --bmad                 # Use BMAD workflow explicitly
+ralph run --beads                # Use Beads workflow explicitly
+ralph run --max-iterations <n>   # Max iterations (positive integer >= 1)
+ralph run --dry-run              # Dry run mode (no changes)
+```
+
+**status**
+```bash
+ralph status                     # Show current execution state
+```
+
+**close**
+```bash
+ralph close <id>                 # Close a task with test verification
+ralph close <id> --force         # Force close without tests (-f)
+ralph close <id> --dry-run       # Dry run mode
+```
+
+**exec-spec**
+```bash
+ralph exec-spec <file>           # Execute a spec file
+ralph exec-spec <file> --skip-review     # Skip Codex review
+ralph exec-spec <file> --max-iterations <n>  # Max iterations
+ralph exec-spec <file> --dry-run  # Dry run mode
+```
+
 ## Tech Stack
 
 - **Execution:** Claude Code CLI
+- **CLI Engine:** TypeScript + Commander.js (bun runtime)
 - **State:** Beads (git-backed) - query `bd ready`, never mirror to JSON
 - **Testing:** bun test + Playwright
 - **Scripts:** Bash
@@ -64,6 +113,12 @@ marketing/              # Twitter thread, LinkedIn narrative
 - Run `bun test` before closing any task
 - If tests fail, task stays open
 - UI tasks require Playwright: `bunx playwright test`
+
+### CLI Validation
+- `--max-iterations` must be a positive integer >= 1 (prevents NaN)
+- `--json-errors` and `--no-json-errors` are mutually exclusive
+- `--bmad` and `--beads` flags cannot be used together
+- The CLI auto-detects workflow if not specified
 
 ### Naming
 - Scripts: `kebab-case.sh`
@@ -83,7 +138,10 @@ marketing/              # Twitter thread, LinkedIn narrative
 # Validate installation
 ./rbp/validate.sh
 
-# Run autonomous execution
+# Run autonomous execution (TypeScript CLI)
+bun ./rbp/lib/src/cli.ts run
+
+# Or using installed script
 ./rbp/scripts/ralph.sh
 
 # Parse story to beads
@@ -129,4 +187,3 @@ bd sync               # Sync with git
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
-

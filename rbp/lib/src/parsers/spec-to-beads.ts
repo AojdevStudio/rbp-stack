@@ -164,7 +164,7 @@ function parseTasks(tasksSection: string): ParsedTask[] {
 
     // Parse subtask items
     if (inSubtasks) {
-      const subtaskMatch = line.match(/^\s*-\s*\[[ x]\]\s*(.+)$/);
+      const subtaskMatch = line.match(/^\s*-\s*\[[ xX]\]\s*(.+)$/);
       if (subtaskMatch) {
         currentSubtasks.push(subtaskMatch[1]);
         continue;

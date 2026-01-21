@@ -42,7 +42,7 @@ mgrep search "epic definitions and stories"
 
 ARG1: $1 (optional - either a spec/story file path OR max iterations number)
 MAX_ITERATIONS: default 10
-RALPH_CLI: scripts/rbp/ralph.sh
+RALPH_CLI: bun ./rbp/lib/src/index.ts
 PROGRESS_FILE: scripts/rbp/progress.txt
 
 ## Workflow Detection
@@ -51,8 +51,8 @@ PROGRESS_FILE: scripts/rbp/progress.txt
 
 | Source | Parser | Executor | Features |
 |--------|--------|----------|----------|
-| Quick-plan spec (`specs/*.md`) | `ralph.sh parse-spec` | `ralph.sh exec-spec` | Codex pre-flight review |
-| BMAD story (`stories/*.md`) | `ralph.sh parse-story` | `ralph.sh run --bmad` | Direct execution |
+| Quick-plan spec (`specs/*.md`) | `ralph parse-spec` | `ralph exec-spec` | Codex pre-flight review |
+| BMAD story (`stories/*.md`) | `ralph parse-story` | `ralph run --bmad` | Direct execution |
 
 **Detection logic:**
 - File contains `<!-- RBP-TASKS-START -->` → Quick-plan spec
@@ -108,7 +108,7 @@ Before starting execution, check for PAI Observability integration:
    a. Find the current epic branch (e.g., `epic-4/admin-dashboard`)
    b. **Run autonomous story generation:**
       ```bash
-      STORY_FILE=$(./scripts/rbp/ralph.sh generate-story --json 2>/dev/null | jq -r '.path')
+      STORY_FILE=$(bun ./rbp/lib/src/index.ts generate-story --json 2>/dev/null | jq -r '.path')
       EXIT_CODE=$?
       ```
    c. **Handle exit codes:**
@@ -118,20 +118,20 @@ Before starting execution, check for PAI Observability integration:
       - `3`: Epic complete - report completion summary and stop
    d. **Parse to beads and execute:**
       ```bash
-      ./scripts/rbp/ralph.sh parse-story "$STORY_FILE"
-      ./scripts/rbp/ralph.sh run --bmad
+      bun ./rbp/lib/src/index.ts parse-story "$STORY_FILE"
+      bun ./rbp/lib/src/index.ts run --bmad
       ```
    e. Loop back to step 1 (check for more tasks)
 
 5. **For Quick-plan projects:**
    - Check if ARG1 is a file path (ends in .md) → use that file
    - Otherwise, find specs with `<!-- RBP-TASKS-START -->` markers
-   - If found: Run `./scripts/rbp/ralph.sh exec-spec <spec-file>`
+   - If found: Run `bun ./rbp/lib/src/index.ts exec-spec <spec-file>`
    - If not found: Report "No actionable specs found" and stop
 
    **Alternative: Use start subcommand for auto-detection:**
    ```bash
-   ./scripts/rbp/ralph.sh start
+   bun ./rbp/lib/src/index.ts start
    ```
 
 6. **If neither project type detected:**
@@ -143,11 +143,11 @@ Before starting execution, check for PAI Observability integration:
 
 7. **Use the unified start command (auto-detects project type):**
    ```bash
-   ./scripts/rbp/ralph.sh start
+   bun ./rbp/lib/src/index.ts start
    ```
    Or run directly with explicit workflow:
-   - BMAD project → `./scripts/rbp/ralph.sh run --bmad`
-   - Beads-only project → `./scripts/rbp/ralph.sh run --beads`
+   - BMAD project → `bun ./rbp/lib/src/index.ts run --bmad`
+   - Beads-only project → `bun ./rbp/lib/src/index.ts run --beads`
 8. Monitor output for completion or errors
 9. Loop back to step 1 when tasks complete (up to MAX_ITERATIONS)
 
@@ -167,7 +167,7 @@ Max Iterations: `MAX_ITERATIONS`
 Monitor with:
 - Browser: http://localhost:5172 (live updates)
 - Terminal: tail -f `PROGRESS_FILE`
-- Ralph Status: ./scripts/rbp/ralph.sh status
+- Ralph Status: bun ./rbp/lib/src/index.ts status
 - Beads: bd activity --follow
 - Tasks: bd status
 - Stop: Ctrl+C

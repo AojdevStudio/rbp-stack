@@ -50,7 +50,7 @@ As a user, I want to log in securely.`;
 - [ ] Write tests`;
 
     const subtasks: string[] = [];
-    const checkboxMatches = content.matchAll(/^\s*-\s*\[[ x]\]\s*(.+)$/gm);
+    const checkboxMatches = content.matchAll(/^\s*-\s*\[[ xX]\]\s*(.+)$/gm);
     for (const match of checkboxMatches) {
       subtasks.push(match[1].trim());
     }
@@ -59,6 +59,25 @@ As a user, I want to log in securely.`;
     expect(subtasks[0]).toBe("Implement login form");
     expect(subtasks[1]).toBe("Add validation");
     expect(subtasks[2]).toBe("Write tests");
+  });
+
+  test("extracts subtasks with uppercase X checkbox", () => {
+    const content = `## Tasks
+
+- [ ] Unchecked task
+- [X] Uppercase checked task
+- [x] Lowercase checked task`;
+
+    const subtasks: string[] = [];
+    const checkboxMatches = content.matchAll(/^\s*-\s*\[[ xX]\]\s*(.+)$/gm);
+    for (const match of checkboxMatches) {
+      subtasks.push(match[1].trim());
+    }
+
+    expect(subtasks).toHaveLength(3);
+    expect(subtasks[0]).toBe("Unchecked task");
+    expect(subtasks[1]).toBe("Uppercase checked task");
+    expect(subtasks[2]).toBe("Lowercase checked task");
   });
 
   test("extracts subtasks from bullet list in Tasks section", () => {

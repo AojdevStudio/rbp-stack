@@ -78,8 +78,8 @@ function detectUiStory(content: string): boolean {
 function extractSubtasks(content: string): string[] {
   const subtasks: string[] = [];
 
-  // Try checkbox format first: - [ ] or - [x]
-  const checkboxMatches = content.matchAll(/^\s*-\s*\[[ x]\]\s*(.+)$/gm);
+  // Try checkbox format first: - [ ] or - [x] or - [X]
+  const checkboxMatches = content.matchAll(/^\s*-\s*\[[ xX]\]\s*(.+)$/gm);
   for (const match of checkboxMatches) {
     subtasks.push(match[1].trim());
   }

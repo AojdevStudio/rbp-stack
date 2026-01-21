@@ -1,5 +1,9 @@
 import { describe, test, expect } from "bun:test";
-import { validateOptions, parseMaxIterations, getConfig, getGlobalOptions, type GlobalOptions } from "../lib/src/cli";
+import { validateOptions, parseMaxIterations, getConfig, getGlobalOptions, program, type GlobalOptions } from "../lib/src/cli";
+import { runCommandDef } from "../lib/src/commands/run";
+import { statusCommandDef } from "../lib/src/commands/status";
+import { closeCommandDef } from "../lib/src/commands/close";
+import { execSpecCommandDef } from "../lib/src/commands/exec-spec";
 
 describe("validateOptions", () => {
   test("allows --bmad only", () => {
@@ -185,5 +189,135 @@ describe("program preAction hook logic", () => {
       process.env.RBP_JSON_ERRORS = "true";
     }
     expect(process.env.RBP_JSON_ERRORS).toBe("true");
+  });
+});
+
+describe("program configuration", () => {
+  test("has correct name", () => {
+    expect(program.name()).toBe("ralph");
+  });
+
+  test("has correct version", () => {
+    expect(program.version()).toBe("3.0.0");
+  });
+
+  test("has description", () => {
+    expect(program.description()).toBe("RBP autonomous execution loop");
+  });
+
+  test("has global options defined", () => {
+    const opts = program.options;
+    const optNames = opts.map((o) => o.long);
+
+    expect(optNames).toContain("--config");
+    expect(optNames).toContain("--verbose");
+    expect(optNames).toContain("--quiet");
+    expect(optNames).toContain("--json-errors");
+    expect(optNames).toContain("--no-json-errors");
+  });
+});
+
+describe("runCommandDef", () => {
+  test("has correct name", () => {
+    expect(runCommandDef.name()).toBe("run");
+  });
+
+  test("has correct description", () => {
+    expect(runCommandDef.description()).toBe("Run the execution loop (default command)");
+  });
+
+  test("has required options", () => {
+    const opts = runCommandDef.options;
+    const optNames = opts.map((o) => o.long);
+
+    expect(optNames).toContain("--bmad");
+    expect(optNames).toContain("--beads");
+    expect(optNames).toContain("--dry-run");
+    expect(optNames).toContain("--max-iterations");
+  });
+
+  test("--bmad and --beads are boolean flags", () => {
+    const bmadOpt = runCommandDef.options.find((o) => o.long === "--bmad");
+    const beadsOpt = runCommandDef.options.find((o) => o.long === "--beads");
+
+    expect(bmadOpt?.required).toBeFalsy();
+    expect(beadsOpt?.required).toBeFalsy();
+  });
+
+  test("--max-iterations takes argument", () => {
+    const maxIterOpt = runCommandDef.options.find((o) => o.long === "--max-iterations");
+    expect(maxIterOpt?.argChoices).toBeUndefined();
+    expect(maxIterOpt?.flags).toContain("<n>");
+  });
+});
+
+describe("statusCommandDef", () => {
+  test("has correct name", () => {
+    expect(statusCommandDef.name()).toBe("status");
+  });
+
+  test("has correct description", () => {
+    expect(statusCommandDef.description()).toBe("Show current execution state");
+  });
+
+  test("has no required arguments", () => {
+    const args = statusCommandDef.registeredArguments;
+    expect(args.length).toBe(0);
+  });
+});
+
+describe("closeCommandDef", () => {
+  test("has correct name", () => {
+    expect(closeCommandDef.name()).toBe("close");
+  });
+
+  test("has correct description", () => {
+    expect(closeCommandDef.description()).toBe("Close a task with test verification");
+  });
+
+  test("has id as required argument", () => {
+    const args = closeCommandDef.registeredArguments;
+    expect(args.length).toBe(1);
+    expect(args[0].name()).toBe("id");
+    expect(args[0].required).toBe(true);
+  });
+
+  test("has required options", () => {
+    const opts = closeCommandDef.options;
+    const optNames = opts.map((o) => o.long);
+
+    expect(optNames).toContain("--force");
+    expect(optNames).toContain("--dry-run");
+  });
+
+  test("--force has short flag -f", () => {
+    const forceOpt = closeCommandDef.options.find((o) => o.long === "--force");
+    expect(forceOpt?.short).toBe("-f");
+  });
+});
+
+describe("execSpecCommandDef", () => {
+  test("has correct name", () => {
+    expect(execSpecCommandDef.name()).toBe("exec-spec");
+  });
+
+  test("has correct description", () => {
+    expect(execSpecCommandDef.description()).toBe("Execute a spec file");
+  });
+
+  test("has file as required argument", () => {
+    const args = execSpecCommandDef.registeredArguments;
+    expect(args.length).toBe(1);
+    expect(args[0].name()).toBe("file");
+    expect(args[0].required).toBe(true);
+  });
+
+  test("has required options", () => {
+    const opts = execSpecCommandDef.options;
+    const optNames = opts.map((o) => o.long);
+
+    expect(optNames).toContain("--skip-review");
+    expect(optNames).toContain("--max-iterations");
+    expect(optNames).toContain("--dry-run");
   });
 });

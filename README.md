@@ -274,6 +274,70 @@ bd tree          # Task hierarchy
 
 <br />
 
+## Ralph CLI Reference
+
+Ralph is the autonomous execution engine for RBP. It's written in TypeScript and runs on Bun.
+
+### Global Options
+
+Available on all commands:
+
+```bash
+ralph --config <path>        # Custom config file path
+ralph --verbose              # Increase output verbosity (debug level)
+ralph --quiet                # Decrease output verbosity (warn level)
+ralph --json-errors          # Output errors as JSON (default: true)
+ralph --no-json-errors       # Output errors as human-readable text
+```
+
+**Error Format:** By default, errors are output as JSON for programmatic processing. Use `--no-json-errors` to get human-readable text output. The `--json-errors` and `--no-json-errors` flags are mutually exclusive.
+
+### Commands
+
+**run** (default command)
+
+```bash
+ralph run                              # Run the execution loop
+ralph run --bmad                       # Use BMAD workflow explicitly
+ralph run --beads                      # Use Beads workflow explicitly
+ralph run --max-iterations <n>         # Max iterations (positive integer >= 1)
+ralph run --dry-run                    # Dry run mode (no changes)
+```
+
+**Validation Rules:**
+- `--max-iterations` must be a positive integer >= 1 (prevents NaN)
+- `--bmad` and `--beads` flags cannot be used together
+- The CLI auto-detects workflow if not specified
+
+**status**
+
+```bash
+ralph status                           # Show current execution state
+```
+
+**close**
+
+```bash
+ralph close <id>                       # Close a task with test verification
+ralph close <id> --force               # Force close without tests (-f)
+ralph close <id> --dry-run             # Dry run mode
+```
+
+**exec-spec**
+
+```bash
+ralph exec-spec <file>                 # Execute a spec file
+ralph exec-spec <file> --skip-review   # Skip Codex review
+ralph exec-spec <file> --max-iterations <n>  # Max iterations
+ralph exec-spec <file> --dry-run       # Dry run mode
+```
+
+<br />
+
+---
+
+<br />
+
 ## How It Works
 
 <br />
@@ -526,6 +590,12 @@ rbp/
 │   ├── start.md              # /rbp:start command (with dashboard auto-launch)
 │   ├── status.md             # /rbp:status command
 │   └── validate.md           # /rbp:validate command
+├── lib/src/
+│   ├── cli.ts                # TypeScript CLI entry point (Commander.js)
+│   ├── commands/             # CLI command implementations
+│   ├── workflows/            # BMAD and Beads workflow handlers
+│   ├── config/               # Configuration loading and validation
+│   └── utils/                # Shared utilities and error handling
 ├── templates/
 │   ├── rbp-config.yaml         # Base configuration
 │   ├── rbp-config.example.yaml # Documented config with comments
@@ -539,7 +609,22 @@ Key features of included scripts:
 - **ralph.sh**: Failure state injection, completion signal detection
 - **close-with-proof.sh**: Failure note appending, multi-layer verification
 - **parse-spec-to-beads.sh**: Atomic subtask creation with dependency chaining
-- **prompt.md**: Enforcement and Consequences section documenting stakes
+- **cli.ts**: TypeScript CLI with validation rules for arguments and options
+
+<br />
+
+---
+
+<br />
+
+## Tech Stack
+
+- **Execution:** Claude Code CLI
+- **CLI Engine:** TypeScript + Commander.js (bun runtime)
+- **State:** Beads (git-backed) — query `bd ready`, never mirror to JSON
+- **Testing:** bun test + Playwright
+- **Scripts:** Bash
+- **Runtime:** bun
 
 <br />
 

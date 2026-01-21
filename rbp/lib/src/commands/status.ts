@@ -5,6 +5,7 @@ import { loadSprintStatus, detectEpicFromBranch } from "../workflows/bmad";
 import { logger } from "../observability/logger";
 import { colors } from "../utils/colors";
 import { existsSync } from "fs";
+import { findProjectRoot, findSprintStatusPath } from "../utils/project-detector";
 
 export async function statusCommand(): Promise<void> {
   const globalOptions = getGlobalOptions();
@@ -13,8 +14,9 @@ export async function statusCommand(): Promise<void> {
   logger.banner("Ralph Status", "RBP Stack v3.0");
 
   const beadsInstalled = await checkBeadsInstalled();
-  const sprintStatusPath = `${process.cwd()}/docs/bmm/sprint-status.yaml`;
-  const sprintStatusExists = existsSync(sprintStatusPath);
+  const projectRoot = findProjectRoot();
+  const sprintStatusPath = findSprintStatusPath(projectRoot);
+  const sprintStatusExists = sprintStatusPath !== undefined;
 
   console.log(`\n${colors.bold("Environment:")}`);
   console.log(`  Beads CLI: ${beadsInstalled ? colors.green("installed") : colors.red("not installed")}`);

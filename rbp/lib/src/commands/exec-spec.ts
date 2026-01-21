@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { existsSync } from "fs";
+import { join } from "path";
 import { getConfig, getGlobalOptions, parseMaxIterations } from "../cli";
 import { runBeadsWorkflow } from "../workflows/beads";
 import { runCodexReview as runCodexReviewWorkflow } from "../workflows/codex";
@@ -8,6 +9,7 @@ import { logger, setLogLevel } from "../observability/logger";
 import { exitWithError, createError, ErrorCodes } from "../utils/errors";
 import { parseShellCommand } from "../utils/shell";
 import { parseSpecToBeads as parseSpecToBeadsImpl } from "../parsers/spec-to-beads";
+import { findProjectRoot } from "../utils/project-detector";
 import type { RbpConfig } from "../config/types";
 
 export interface ExecSpecOptions {
@@ -53,11 +55,12 @@ export async function execSpecCommand(file: string, options: ExecSpecOptions): P
   let specFile = file;
   if (!existsSync(specFile)) {
     const specsDir = config.paths.specs;
+    const projectRoot = findProjectRoot();
     const candidates = [
       `${specsDir}/${file}`,
       `${specsDir}/${file}.md`,
-      `${process.cwd()}/${specsDir}/${file}`,
-      `${process.cwd()}/${specsDir}/${file}.md`,
+      join(projectRoot, specsDir, file),
+      join(projectRoot, specsDir, `${file}.md`),
     ];
 
     for (const candidate of candidates) {
@@ -116,9 +119,13 @@ export async function execSpecCommand(file: string, options: ExecSpecOptions): P
         stdout: "pipe",
         stderr: "pipe",
       });
-      const stdout = await new Response(proc.stdout).text();
-      const exitCode = await proc.exited;
-      return { passed: exitCode === 0, output: stdout };
+      const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+      const output = stderr ? `${stdout}\n${stderr}` : stdout;
+      return { passed: exitCode === 0, output };
     },
   });
 

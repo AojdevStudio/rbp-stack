@@ -128,7 +128,7 @@ export function parseShowBeadOutput(result: CommandResult, id: string): BeadsCli
 
 /**
  * Parse children beads output from bd CLI
- * @param result - Command result from bd children --json
+ * @param result - Command result from bd dep list --direction=up --type parent-child --json
  * @param parentId - Parent bead ID for error context
  * @returns Parsed result with list of child beads
  */
@@ -136,7 +136,7 @@ export function parseChildrenOutput(result: CommandResult, parentId: string): Be
   if (result.exitCode !== 0) {
     return {
       success: false,
-      error: createError(ErrorCodes.BEADS_COMMAND_FAILED, `bd children ${parentId} failed`, {
+      error: createError(ErrorCodes.BEADS_COMMAND_FAILED, `bd dep list ${parentId} --direction=up --type parent-child failed`, {
         details: { stderr: result.stderr },
       }),
     };
@@ -357,28 +357,10 @@ export async function createBead(title: string, options: CreateBeadOptions = {})
 }
 
 /**
- * Get children beads of a parent
+ * Get children beads of a parent using bd dep list with parent-child type
  */
 export async function getBeadChildren(parentId: string): Promise<BeadsCliResult<Bead[]>> {
-  const result = await runBeadsCommand(["children", parentId, "--json"]);
-
-  if (result.exitCode !== 0) {
-    // Some versions might not support children command, try list with parent filter
-    const listResult = await runBeadsCommand(["list", "--json"]);
-    if (listResult.exitCode !== 0) {
-      return parseChildrenOutput(result, parentId);
-    }
-
-    // Filter manually by checking if we can
-    try {
-      const parsed = JSON.parse(listResult.stdout || "[]");
-      const beads = BeadListSchema.parse(parsed);
-      // Return all beads as fallback (can't filter by parent without proper support)
-      return { success: true, data: beads };
-    } catch {
-      return { success: true, data: [] };
-    }
-  }
+  const result = await runBeadsCommand(["dep", "list", parentId, "--direction=up", "--type", "parent-child", "--json"]);
 
   return parseChildrenOutput(result, parentId);
 }

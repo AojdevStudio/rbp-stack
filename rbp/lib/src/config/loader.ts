@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "fs";
 import { parse as parseYaml } from "yaml";
 import { RbpConfigSchema } from "./schema";
+import { findProjectRoot } from "../utils/project-detector";
 import type { RbpConfig, ConfigLoadOptions } from "./types";
 
 const DEFAULT_CONFIG_PATHS = ["rbp-config.yaml", "rbp-config.yml", ".rbp/config.yaml"];
@@ -41,7 +42,7 @@ function deepMerge<T extends Record<string, unknown>>(target: T, source: Partial
 }
 
 export function loadConfig(options: ConfigLoadOptions = {}): RbpConfig {
-  const basePath = process.cwd();
+  const basePath = findProjectRoot();
   const configPath = options.configPath ?? findConfigFile(basePath);
 
   let rawConfig: Record<string, unknown> = {};

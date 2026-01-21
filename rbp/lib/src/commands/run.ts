@@ -8,6 +8,7 @@ import { checkBeadsInstalled } from "../integrations/beads-cli";
 import { exitWithError, createError, ErrorCodes } from "../utils/errors";
 import { parseShellCommand } from "../utils/shell";
 import { existsSync } from "fs";
+import { findProjectRoot, findSprintStatusPath } from "../utils/project-detector";
 
 export interface RunOptions {
   bmad?: boolean;
@@ -38,10 +39,11 @@ export async function runCommand(options: RunOptions): Promise<void> {
   } else if (options.beads) {
     workflow = "beads";
   } else {
-    const sprintStatusExists = existsSync(`${process.cwd()}/docs/bmm/sprint-status.yaml`);
+    const projectRoot = findProjectRoot();
+    const sprintStatusPath = findSprintStatusPath(projectRoot);
     const beadsInstalled = await checkBeadsInstalled();
 
-    if (sprintStatusExists) {
+    if (sprintStatusPath) {
       workflow = "bmad";
     } else if (beadsInstalled) {
       workflow = "beads";
@@ -113,23 +115,36 @@ Execute this task following the RBP Protocol. Run tests to verify completion bef
         proc.stdin?.write(new TextEncoder().encode(prompt));
         proc.stdin?.end();
 
-        const stdout = await new Response(proc.stdout).text();
-        const exitCode = await proc.exited;
+        const [stdout, stderr, exitCode] = await Promise.all([
+          new Response(proc.stdout).text(),
+          new Response(proc.stderr).text(),
+          proc.exited,
+        ]);
 
         if (exitCode !== 0) {
           logger.warn("Claude execution had non-zero exit code");
+          if (stderr) {
+            logger.debug(`Claude stderr: ${stderr}`);
+          }
         }
 
         console.log(stdout);
+        if (stderr) {
+          console.error(stderr);
+        }
       },
       runTests: async () => {
         const proc = Bun.spawn(parseShellCommand(config.verification.test_command), {
           stdout: "pipe",
           stderr: "pipe",
         });
-        const stdout = await new Response(proc.stdout).text();
-        const exitCode = await proc.exited;
-        return { passed: exitCode === 0, output: stdout };
+        const [stdout, stderr, exitCode] = await Promise.all([
+          new Response(proc.stdout).text(),
+          new Response(proc.stderr).text(),
+          proc.exited,
+        ]);
+        const output = stderr ? `${stdout}\n${stderr}` : stdout;
+        return { passed: exitCode === 0, output };
       },
     });
 
@@ -174,17 +189,24 @@ Execute this workflow following BMAD standards. After completion, run tests to v
         proc.stdin?.write(new TextEncoder().encode(prompt));
         proc.stdin?.end();
 
-        const stdout = await new Response(proc.stdout).text();
-        const exitCode = await proc.exited;
+        const [stdout, stderr, exitCode] = await Promise.all([
+          new Response(proc.stdout).text(),
+          new Response(proc.stderr).text(),
+          proc.exited,
+        ]);
 
         if (exitCode !== 0) {
-          const stderr = await new Response(proc.stderr).text();
           logger.warn(`BMAD workflow had non-zero exit code: ${exitCode}`);
-          logger.debug(`stderr: ${stderr}`);
+          if (stderr) {
+            logger.debug(`stderr: ${stderr}`);
+          }
           throw new Error(`Workflow ${command} failed with exit code ${exitCode}`);
         }
 
         console.log(stdout);
+        if (stderr) {
+          console.error(stderr);
+        }
       },
     });
 

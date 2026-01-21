@@ -8,7 +8,7 @@
  */
 
 import { existsSync, mkdirSync, appendFileSync } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
 import { getBeadsStatus, getReadyBead, listBeads } from "../integrations/beads-cli";
 
 export interface SessionStartResult {
@@ -120,7 +120,7 @@ export async function runPreCompactHook(progressDir?: string): Promise<PreCompac
     : "scripts/rbp/progress.txt";
 
   // Ensure progress file directory exists
-  const progressDirPath = join(progressFile, "..");
+  const progressDirPath = dirname(progressFile);
   if (!existsSync(progressDirPath)) {
     try {
       mkdirSync(progressDirPath, { recursive: true });

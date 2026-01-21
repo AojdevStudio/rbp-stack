@@ -80,18 +80,27 @@ export async function runCodexReview(options: CodexReviewOptions): Promise<Codex
       }
     );
 
-    const stdout = await new Response(proc.stdout).text();
-    const exitCode = await proc.exited;
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
 
     if (exitCode === 0) {
       console.log(stdout);
+      if (stderr) {
+        console.error(stderr);
+      }
       emitCodexReview("complete", specFile, stdout.slice(0, 500));
       logger.success("Codex review complete");
       return { success: true, skipped: false, output: stdout };
     } else {
       logger.warn("Codex review failed or unavailable. Continuing without review.");
-      emitCodexReview("failed", specFile, "Codex unavailable or failed");
-      return { success: false, skipped: false, error: "Codex review failed" };
+      if (stderr) {
+        logger.debug(`Codex stderr: ${stderr}`);
+      }
+      emitCodexReview("failed", specFile, stderr || "Codex unavailable or failed");
+      return { success: false, skipped: false, error: stderr || "Codex review failed" };
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
