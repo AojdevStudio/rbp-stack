@@ -143,20 +143,13 @@ install_scripts() {
   mkdir -p "$TARGET_DIR/scripts/rbp/lib/dist"
   cp "$SCRIPT_DIR/lib/dist/index.js" "$TARGET_DIR/scripts/rbp/lib/dist/"
 
-  # Copy supporting scripts (some still in bash)
-  cp "$SCRIPT_DIR/scripts/start.sh" "$TARGET_DIR/scripts/rbp/"
+  # Copy prompt template
   cp "$SCRIPT_DIR/scripts/prompt.md" "$TARGET_DIR/scripts/rbp/"
-  cp "$SCRIPT_DIR/scripts/sequencer.sh" "$TARGET_DIR/scripts/rbp/"
-  cp "$SCRIPT_DIR/scripts/parse-story-to-beads.sh" "$TARGET_DIR/scripts/rbp/"
-  cp "$SCRIPT_DIR/scripts/parse-spec-to-beads.sh" "$TARGET_DIR/scripts/rbp/"
-  cp "$SCRIPT_DIR/scripts/create-story-autonomous.sh" "$TARGET_DIR/scripts/rbp/"
-  cp "$SCRIPT_DIR/scripts/show-active-task.sh" "$TARGET_DIR/scripts/rbp/"
-  cp "$SCRIPT_DIR/scripts/save-progress-to-beads.sh" "$TARGET_DIR/scripts/rbp/"
 
-  # Make scripts executable
+  # Make wrapper executable
   chmod +x "$TARGET_DIR/scripts/rbp/"*.sh
 
-  print_success "Scripts installed"
+  print_success "TypeScript CLI installed"
   echo ""
 }
 
@@ -284,17 +277,22 @@ print_summary() {
   echo "  2. Run validation: $TARGET_DIR/scripts/rbp/validate.sh"
   echo ""
   echo "Start autonomous execution:"
-  echo "  ./scripts/rbp/start.sh"
+  echo "  ./scripts/rbp/ralph.sh start"
   echo ""
-  echo "  That's it. One script. It will:"
+  echo "  That's it. One command. It will:"
   echo "    - Detect project type (BMAD or Quick-plan)"
   echo "    - Auto-create stories from epics (headless)"
   echo "    - Parse to beads tasks"
-  echo "    - Run ralph loop until complete"
+  echo "    - Run execution loop until complete"
   echo ""
-  echo "  Or run components separately:"
-  echo "    ./scripts/rbp/ralph.sh          # Just the execution loop"
-  echo "    ./scripts/rbp/create-story-autonomous.sh  # Create story only"
+  echo "  CLI Commands:"
+  echo "    ./scripts/rbp/ralph.sh start          # Auto-detect and run"
+  echo "    ./scripts/rbp/ralph.sh run            # Run execution loop"
+  echo "    ./scripts/rbp/ralph.sh status         # Show progress"
+  echo "    ./scripts/rbp/ralph.sh parse-spec     # Parse spec to beads"
+  echo "    ./scripts/rbp/ralph.sh parse-story    # Parse story to beads"
+  echo "    ./scripts/rbp/ralph.sh generate-story # Create BMAD story"
+  echo "    ./scripts/rbp/ralph.sh hooks          # Run session hooks"
   echo ""
   echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
 }

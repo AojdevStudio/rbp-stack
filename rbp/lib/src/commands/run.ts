@@ -128,6 +128,47 @@ Execute this task following the RBP Protocol. Run tests to verify completion bef
       config,
       maxIterations,
       dryRun: options.dryRun,
+      invokeSlashCommand: async (command: string, args?: string[]) => {
+        logger.info(`Invoking BMAD workflow: ${command} ${args?.join(" ") ?? ""}`);
+
+        // Build the slash command invocation
+        const slashCommand = args?.length ? `${command} ${args.join(" ")}` : command;
+
+        const proc = Bun.spawn(
+          ["claude", "--dangerously-skip-permissions"],
+          {
+            stdin: "pipe",
+            stdout: "pipe",
+            stderr: "pipe",
+          }
+        );
+
+        const prompt = `# BMAD Workflow Execution
+
+Run the following slash command:
+
+\`\`\`
+${slashCommand}
+\`\`\`
+
+Execute this workflow following BMAD standards. After completion, run tests to verify the implementation.
+`;
+
+        proc.stdin?.write(new TextEncoder().encode(prompt));
+        proc.stdin?.end();
+
+        const stdout = await new Response(proc.stdout).text();
+        const exitCode = await proc.exited;
+
+        if (exitCode !== 0) {
+          const stderr = await new Response(proc.stderr).text();
+          logger.warn(`BMAD workflow had non-zero exit code: ${exitCode}`);
+          logger.debug(`stderr: ${stderr}`);
+          throw new Error(`Workflow ${command} failed with exit code ${exitCode}`);
+        }
+
+        console.log(stdout);
+      },
     });
 
     if (!result.success && result.error) {

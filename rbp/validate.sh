@@ -106,13 +106,6 @@ echo -e "${YELLOW}Scripts:${NC}"
 REQUIRED_SCRIPTS=(
   "ralph.sh"
   "prompt.md"
-  "sequencer.sh"
-  "parse-story-to-beads.sh"
-  "show-active-task.sh"
-  "save-progress-to-beads.sh"
-  "parse-spec-to-beads.sh"
-  "start.sh"
-  "create-story-autonomous.sh"
 )
 
 for script in "${REQUIRED_SCRIPTS[@]}"; do
@@ -130,6 +123,13 @@ echo -e "${YELLOW}TypeScript CLI:${NC}"
 
 if [ -f "$PROJECT_ROOT/scripts/rbp/lib/dist/index.js" ]; then
   check_pass "lib/dist/index.js (compiled CLI)"
+
+  # Verify CLI is executable
+  if bun "$PROJECT_ROOT/scripts/rbp/lib/dist/index.js" --version &>/dev/null; then
+    check_pass "CLI executable and responds to --version"
+  else
+    check_warn "CLI exists but may not be functional"
+  fi
 else
   check_fail "lib/dist/index.js missing (run 'bun run build' in rbp/)"
 fi
@@ -165,7 +165,7 @@ else
 fi
 
 if [ -f "$PROJECT_ROOT/.claude/settings.json" ]; then
-  if grep -q "show-active-task\|save-progress-to-beads" "$PROJECT_ROOT/.claude/settings.json" 2>/dev/null; then
+  if grep -q "ralph\|hooks" "$PROJECT_ROOT/.claude/settings.json" 2>/dev/null; then
     check_pass "hooks configured in settings.json"
   else
     check_warn "hooks may not be configured in settings.json"
@@ -212,19 +212,23 @@ if [ $FAIL_COUNT -eq 0 ]; then
   echo "You can now use either workflow:"
   echo ""
   echo "  Workflow A - BMAD Stories:"
-  echo "    1. Create stories: /bmad:bmm:workflows:create-story"
-  echo "    2. Convert: ./scripts/rbp/parse-story-to-beads.sh <story.md>"
-  echo "    3. Execute: ./scripts/rbp/ralph.sh"
+  echo "    1. Create stories: ./scripts/rbp/ralph.sh generate-story"
+  echo "    2. Convert: ./scripts/rbp/ralph.sh parse-story <story.md>"
+  echo "    3. Execute: ./scripts/rbp/ralph.sh run"
   echo ""
   echo "  Workflow B - Quick-Plan Specs:"
   echo "    1. Create spec: /quick-plan \"feature description\""
   echo "    2. Execute: ./scripts/rbp/ralph.sh exec-spec specs/<spec>.md"
   echo ""
+  echo "  Or auto-detect:"
+  echo "    ./scripts/rbp/ralph.sh start        # Detects workflow and runs"
+  echo ""
   echo "  CLI Commands:"
-  echo "    ./scripts/rbp/ralph.sh              # Run main loop"
+  echo "    ./scripts/rbp/ralph.sh start        # Auto-detect and run"
+  echo "    ./scripts/rbp/ralph.sh run          # Run execution loop"
   echo "    ./scripts/rbp/ralph.sh status       # Show status"
   echo "    ./scripts/rbp/ralph.sh close <id>   # Close task (test-gated)"
-  echo "    ./scripts/rbp/ralph.sh exec-spec    # Execute spec file"
+  echo "    ./scripts/rbp/ralph.sh hooks        # Run session hooks manually"
 else
   echo -e "${RED}RBP Stack: NOT READY${NC}"
   echo -e "$PASS_COUNT passed, ${RED}$FAIL_COUNT failed${NC}, $WARN_COUNT warnings"
