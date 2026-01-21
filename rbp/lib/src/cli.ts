@@ -16,7 +16,17 @@ export const program = new Command()
   .option("-c, --config <path>", "Custom config file path")
   .option("-v, --verbose", "Increase output verbosity")
   .option("-q, --quiet", "Decrease output verbosity")
-  .option("--json-errors", "Output errors as JSON (default: true)", true);
+  .option("--json-errors", "Output errors as JSON (default: true)", true)
+  .option("--no-json-errors", "Output errors as human-readable text")
+  .hook("preAction", (thisCommand) => {
+    const opts = thisCommand.opts();
+    // Wire --json-errors flag to environment variable for error formatting
+    if (opts.jsonErrors === false) {
+      process.env.RBP_JSON_ERRORS = "false";
+    } else {
+      process.env.RBP_JSON_ERRORS = "true";
+    }
+  });
 
 export function getGlobalOptions(): GlobalOptions {
   return program.opts();
