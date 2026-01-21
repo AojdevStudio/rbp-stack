@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { getConfig, getGlobalOptions, validateOptions } from "../cli";
+import { getConfig, getGlobalOptions, validateOptions, parseMaxIterations } from "../cli";
 import { runBeadsWorkflow } from "../workflows/beads";
 import { runBmadWorkflow } from "../workflows/bmad";
 import { emitWorkflowStart, emitWorkflowComplete } from "../observability/events";
@@ -26,9 +26,7 @@ export async function runCommand(options: RunOptions): Promise<void> {
   }
 
   const config = getConfig(globalOptions);
-  const maxIterations = options.maxIterations
-    ? parseInt(options.maxIterations, 10)
-    : config.execution.max_iterations;
+  const maxIterations = parseMaxIterations(options.maxIterations, config.execution.max_iterations);
 
   logger.banner("Ralph - Autonomous Execution Loop", "RBP Stack v3.0");
 

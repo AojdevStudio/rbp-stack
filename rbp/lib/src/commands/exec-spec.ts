@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { existsSync } from "fs";
-import { getConfig, getGlobalOptions } from "../cli";
+import { getConfig, getGlobalOptions, parseMaxIterations } from "../cli";
 import { runBeadsWorkflow } from "../workflows/beads";
 import { emitCodexReview, emitSpecParsed } from "../observability/events";
 import { logger, setLogLevel } from "../observability/logger";
@@ -153,9 +153,7 @@ export async function execSpecCommand(file: string, options: ExecSpecOptions): P
 
   logger.section("Execution Loop");
 
-  const maxIterations = options.maxIterations
-    ? parseInt(options.maxIterations, 10)
-    : config.execution.max_iterations;
+  const maxIterations = parseMaxIterations(options.maxIterations, config.execution.max_iterations);
 
   const result = await runBeadsWorkflow({
     config,

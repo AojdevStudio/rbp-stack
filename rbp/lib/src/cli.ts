@@ -44,6 +44,26 @@ export function validateOptions(options: { bmad?: boolean; beads?: boolean }): v
   }
 }
 
+export function parseMaxIterations(value: string | undefined, defaultValue: number): number {
+  if (value === undefined) {
+    return defaultValue;
+  }
+
+  const parsed = parseInt(value, 10);
+
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    exitWithError(
+      createError(
+        ErrorCodes.INVALID_ARGUMENT,
+        `Invalid max-iterations value: "${value}"`,
+        { suggestion: "Provide a positive integer >= 1" }
+      )
+    );
+  }
+
+  return parsed;
+}
+
 export function getConfig(globalOptions: GlobalOptions) {
   return loadConfig({
     configPath: globalOptions.config,
