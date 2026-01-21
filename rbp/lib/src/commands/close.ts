@@ -4,6 +4,7 @@ import { showBead, closeBead, addBeadNote, updateBeadStatus } from "../integrati
 import { emitTestResult, emitTaskComplete, emitTaskFailed } from "../observability/events";
 import { logger, setLogLevel } from "../observability/logger";
 import { exitWithError, createError, ErrorCodes } from "../utils/errors";
+import { parseShellCommand } from "../utils/shell";
 import { isUiTask } from "../workflows/beads";
 
 export interface CloseOptions {
@@ -37,7 +38,27 @@ export async function closeCommand(id: string, options: CloseOptions): Promise<v
   logger.info(`Status: ${bead.status}`);
 
   if (options.dryRun) {
-    logger.info("[DRY RUN] Would run tests and close task");
+    const needsPlaywright = config.verification.require_playwright_for_ui &&
+      isUiTask(bead, config.ui_detection.keywords);
+    const testCommand = needsPlaywright
+      ? config.verification.playwright_command
+      : config.verification.test_command;
+
+    logger.section("[DRY RUN] Execution Plan");
+    logger.info(`Task: ${id} - ${bead.title}`);
+    logger.info(`Current status: ${bead.status}`);
+    if (options.force) {
+      logger.info("Would skip tests (--force flag)");
+    } else if (config.verification.require_tests) {
+      logger.info(`Would run tests: ${testCommand}`);
+      if (needsPlaywright) {
+        logger.info("UI task detected - would use Playwright");
+      }
+    } else {
+      logger.info("Would skip tests (require_tests=false in config)");
+    }
+    logger.info(`Would close task via 'bd close ${id}'`);
+    logger.success("[DRY RUN] No changes made");
     return;
   }
 
@@ -51,7 +72,7 @@ export async function closeCommand(id: string, options: CloseOptions): Promise<v
 
     logger.info(`Running tests: ${testCommand}`);
 
-    const proc = Bun.spawn(testCommand.split(" "), {
+    const proc = Bun.spawn(parseShellCommand(testCommand), {
       stdout: "pipe",
       stderr: "pipe",
     });

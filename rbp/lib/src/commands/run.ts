@@ -6,6 +6,7 @@ import { emitWorkflowStart, emitWorkflowComplete } from "../observability/events
 import { logger, setLogLevel } from "../observability/logger";
 import { checkBeadsInstalled } from "../integrations/beads-cli";
 import { exitWithError, createError, ErrorCodes } from "../utils/errors";
+import { parseShellCommand } from "../utils/shell";
 import { existsSync } from "fs";
 
 export interface RunOptions {
@@ -64,6 +65,24 @@ export async function runCommand(options: RunOptions): Promise<void> {
   logger.info(`Max Iterations: ${maxIterations}`);
   logger.info(`Dry Run: ${options.dryRun ?? false}`);
 
+  if (options.dryRun) {
+    logger.section("[DRY RUN] Execution Plan");
+    logger.info(`Would run ${workflow.toUpperCase()} workflow`);
+    logger.info(`Max iterations: ${maxIterations}`);
+    logger.info(`Test command: ${config.verification.test_command}`);
+    if (workflow === "beads") {
+      logger.info("Would query 'bd ready' for next task");
+      logger.info("Would invoke Claude for each task");
+      logger.info("Would run tests before closing tasks");
+    } else if (workflow === "bmad") {
+      logger.info("Would read sprint-status.yaml for stories");
+      logger.info("Would invoke BMAD slash commands");
+      logger.info("Would transition story statuses on completion");
+    }
+    logger.success("[DRY RUN] No changes made");
+    return;
+  }
+
   if (workflow === "beads") {
     const result = await runBeadsWorkflow({
       config,
@@ -104,7 +123,7 @@ Execute this task following the RBP Protocol. Run tests to verify completion bef
         console.log(stdout);
       },
       runTests: async () => {
-        const proc = Bun.spawn(config.verification.test_command.split(" "), {
+        const proc = Bun.spawn(parseShellCommand(config.verification.test_command), {
           stdout: "pipe",
           stderr: "pipe",
         });

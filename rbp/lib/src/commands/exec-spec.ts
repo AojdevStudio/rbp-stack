@@ -6,6 +6,7 @@ import { runCodexReview as runCodexReviewWorkflow } from "../workflows/codex";
 import { emitSpecParsed } from "../observability/events";
 import { logger, setLogLevel } from "../observability/logger";
 import { exitWithError, createError, ErrorCodes } from "../utils/errors";
+import { parseShellCommand } from "../utils/shell";
 import { parseSpecToBeads as parseSpecToBeadsImpl } from "../parsers/spec-to-beads";
 import type { RbpConfig } from "../config/types";
 
@@ -77,13 +78,25 @@ export async function execSpecCommand(file: string, options: ExecSpecOptions): P
 
   logger.info(`Spec File: ${specFile}`);
 
+  const maxIterations = parseMaxIterations(options.maxIterations, config.execution.max_iterations);
+  const skipReview = options.skipReview ?? config.codex.skip_by_default;
+
   if (options.dryRun) {
-    logger.info("[DRY RUN] Would execute spec");
-    logger.info(`[DRY RUN] Skip Review: ${options.skipReview ?? config.codex.skip_by_default}`);
+    logger.section("[DRY RUN] Execution Plan");
+    logger.info(`Spec file: ${specFile}`);
+    logger.info(`Skip Codex review: ${skipReview}`);
+    logger.info(`Max iterations: ${maxIterations}`);
+    logger.info(`Test command: ${config.verification.test_command}`);
+    logger.info("Steps that would execute:");
+    if (!skipReview) {
+      logger.info("  1. Run Codex pre-flight review");
+    }
+    logger.info(`  ${skipReview ? "1" : "2"}. Parse spec to Beads tasks`);
+    logger.info(`  ${skipReview ? "2" : "3"}. Run Beads workflow (up to ${maxIterations} iterations)`);
+    logger.success("[DRY RUN] No changes made");
     return;
   }
 
-  const skipReview = options.skipReview ?? config.codex.skip_by_default;
   if (!skipReview) {
     await performCodexReview(specFile, config);
   } else {
@@ -94,14 +107,12 @@ export async function execSpecCommand(file: string, options: ExecSpecOptions): P
 
   logger.section("Execution Loop");
 
-  const maxIterations = parseMaxIterations(options.maxIterations, config.execution.max_iterations);
-
   const result = await runBeadsWorkflow({
     config,
     maxIterations,
-    dryRun: false,
+    dryRun: options.dryRun,
     runTests: async () => {
-      const proc = Bun.spawn(config.verification.test_command.split(" "), {
+      const proc = Bun.spawn(parseShellCommand(config.verification.test_command), {
         stdout: "pipe",
         stderr: "pipe",
       });
