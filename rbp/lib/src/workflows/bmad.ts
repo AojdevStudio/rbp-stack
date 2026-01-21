@@ -82,7 +82,11 @@ export function loadSprintStatus(path: string): SprintStatus | null {
 
   try {
     const content = readFileSync(path, "utf-8");
-    return parseYaml(content) as SprintStatus;
+    const parsed = parseYaml(content) as SprintStatus;
+    if (!parsed || !Array.isArray(parsed.stories)) {
+      return null;
+    }
+    return parsed;
   } catch {
     return null;
   }

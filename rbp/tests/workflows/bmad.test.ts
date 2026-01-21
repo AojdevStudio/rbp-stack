@@ -135,6 +135,28 @@ stories:
     // Should return null when parsing fails, or the parsed content if yaml lib is lenient
     expect(result === null || typeof result === "object").toBe(true);
   });
+
+  test("returns null for YAML without stories array", () => {
+    const yamlWithoutStories = `
+epic: "4"
+current_story: "4-1"
+`;
+    writeFileSync(`${TEST_DIR}/no-stories.yaml`, yamlWithoutStories);
+
+    const result = loadSprintStatus(`${TEST_DIR}/no-stories.yaml`);
+    expect(result).toBeNull();
+  });
+
+  test("returns null for YAML with non-array stories", () => {
+    const yamlWithBadStories = `
+epic: "4"
+stories: "not an array"
+`;
+    writeFileSync(`${TEST_DIR}/bad-stories.yaml`, yamlWithBadStories);
+
+    const result = loadSprintStatus(`${TEST_DIR}/bad-stories.yaml`);
+    expect(result).toBeNull();
+  });
 });
 
 describe("saveSprintStatus", () => {
