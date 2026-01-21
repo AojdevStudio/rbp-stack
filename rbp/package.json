@@ -2,6 +2,9 @@
   "name": "rbp-stack",
   "version": "3.0.0",
   "type": "module",
+  "bin": {
+    "ralph": "./lib/src/index.ts"
+  },
   "scripts": {
     "build": "bun build ./lib/src/index.ts --outdir ./lib/dist --target bun",
     "test": "bun test",

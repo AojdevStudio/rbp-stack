@@ -5,12 +5,16 @@ export const BeadSchema = z.object({
   id: z.string(),
   title: z.string(),
   status: z.enum(["open", "in_progress", "blocked", "deferred", "closed"]),
-  priority: z.string().optional(),
+  priority: z.union([z.string(), z.number()]).optional(),
   type: z.string().optional(),
+  issue_type: z.string().optional(),
   notes: z.string().optional(),
   labels: z.array(z.string()).optional(),
   created: z.string().optional(),
   updated: z.string().optional(),
+  created_at: z.string().optional(),
+  updated_at: z.string().optional(),
+  created_by: z.string().optional(),
 });
 
 export const BeadListSchema = z.array(BeadSchema);

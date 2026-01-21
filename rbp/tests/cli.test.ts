@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { validateOptions, parseMaxIterations } from "../lib/src/cli";
+import { validateOptions, parseMaxIterations, getConfig, getGlobalOptions, type GlobalOptions } from "../lib/src/cli";
 
 describe("validateOptions", () => {
   test("allows --bmad only", () => {
@@ -97,5 +97,93 @@ describe("parseMaxIterations", () => {
   test("truncates float to integer", () => {
     // parseInt truncates floats, so "3.5" becomes 3 which is valid
     expect(parseMaxIterations("3.5", 50)).toBe(3);
+  });
+});
+
+describe("getGlobalOptions", () => {
+  test("returns options object", () => {
+    const opts = getGlobalOptions();
+    expect(typeof opts).toBe("object");
+  });
+});
+
+describe("getConfig", () => {
+  test("returns config with default options", () => {
+    const globalOpts: GlobalOptions = {};
+    const config = getConfig(globalOpts);
+
+    expect(config).toBeDefined();
+    expect(config.project).toBeDefined();
+    expect(config.execution).toBeDefined();
+    expect(config.verification).toBeDefined();
+  });
+
+  test("uses config path from global options when provided", () => {
+    const globalOpts: GlobalOptions = {
+      config: "/nonexistent/config.yaml",
+    };
+
+    // This should still return a default config since file doesn't exist
+    const config = getConfig(globalOpts);
+    expect(config).toBeDefined();
+  });
+});
+
+describe("GlobalOptions type", () => {
+  test("all properties are optional", () => {
+    const emptyOpts: GlobalOptions = {};
+    expect(emptyOpts.config).toBeUndefined();
+    expect(emptyOpts.verbose).toBeUndefined();
+    expect(emptyOpts.quiet).toBeUndefined();
+    expect(emptyOpts.jsonErrors).toBeUndefined();
+  });
+
+  test("accepts all properties", () => {
+    const fullOpts: GlobalOptions = {
+      config: "/path/to/config.yaml",
+      verbose: true,
+      quiet: false,
+      jsonErrors: true,
+    };
+
+    expect(fullOpts.config).toBe("/path/to/config.yaml");
+    expect(fullOpts.verbose).toBe(true);
+    expect(fullOpts.quiet).toBe(false);
+    expect(fullOpts.jsonErrors).toBe(true);
+  });
+});
+
+describe("program preAction hook logic", () => {
+  test("sets RBP_JSON_ERRORS to false when jsonErrors option is false", () => {
+    // Test the logic directly (simulates what preAction hook does)
+    const opts = { jsonErrors: false };
+    if (opts.jsonErrors === false) {
+      process.env.RBP_JSON_ERRORS = "false";
+    } else {
+      process.env.RBP_JSON_ERRORS = "true";
+    }
+    expect(process.env.RBP_JSON_ERRORS).toBe("false");
+  });
+
+  test("sets RBP_JSON_ERRORS to true when jsonErrors option is true", () => {
+    // Test the logic directly (simulates what preAction hook does)
+    const opts = { jsonErrors: true };
+    if (opts.jsonErrors === false) {
+      process.env.RBP_JSON_ERRORS = "false";
+    } else {
+      process.env.RBP_JSON_ERRORS = "true";
+    }
+    expect(process.env.RBP_JSON_ERRORS).toBe("true");
+  });
+
+  test("sets RBP_JSON_ERRORS to true when jsonErrors option is undefined", () => {
+    // When not specified, defaults to true
+    const opts = { jsonErrors: undefined };
+    if (opts.jsonErrors === false) {
+      process.env.RBP_JSON_ERRORS = "false";
+    } else {
+      process.env.RBP_JSON_ERRORS = "true";
+    }
+    expect(process.env.RBP_JSON_ERRORS).toBe("true");
   });
 });

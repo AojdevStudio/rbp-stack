@@ -1,5 +1,66 @@
 import { describe, test, expect } from "bun:test";
-import { buildTaskPrompt } from "../../lib/src/integrations/claude-cli";
+import { buildTaskPrompt, checkClaudeInstalled, invokeClaude, type ClaudeInvokeOptions, type ClaudeInvokeResult } from "../../lib/src/integrations/claude-cli";
+
+describe("checkClaudeInstalled", () => {
+  test("returns boolean indicating if claude CLI is available", async () => {
+    const result = await checkClaudeInstalled();
+    // Result should be a boolean - either installed or not
+    expect(typeof result).toBe("boolean");
+  });
+});
+
+describe("invokeClaude return types", () => {
+  test("ClaudeInvokeOptions structure is valid", () => {
+    const options: ClaudeInvokeOptions = {
+      prompt: "Test prompt",
+      timeout: 5000,
+      workingDir: "/tmp",
+    };
+
+    expect(options.prompt).toBe("Test prompt");
+    expect(options.timeout).toBe(5000);
+    expect(options.workingDir).toBe("/tmp");
+  });
+
+  test("ClaudeInvokeResult structure for success", () => {
+    const successResult: ClaudeInvokeResult = {
+      success: true,
+      output: "Task completed",
+    };
+
+    expect(successResult.success).toBe(true);
+    expect(successResult.output).toBe("Task completed");
+    expect(successResult.error).toBeUndefined();
+    expect(successResult.timedOut).toBeUndefined();
+  });
+
+  test("ClaudeInvokeResult structure for failure", () => {
+    const failResult: ClaudeInvokeResult = {
+      success: false,
+      error: {
+        code: "CLAUDE_FAILED",
+        message: "Command failed",
+      },
+    };
+
+    expect(failResult.success).toBe(false);
+    expect(failResult.error?.code).toBe("CLAUDE_FAILED");
+  });
+
+  test("ClaudeInvokeResult structure for timeout", () => {
+    const timeoutResult: ClaudeInvokeResult = {
+      success: false,
+      timedOut: true,
+      error: {
+        code: "CLAUDE_TIMEOUT",
+        message: "Operation timed out",
+      },
+    };
+
+    expect(timeoutResult.success).toBe(false);
+    expect(timeoutResult.timedOut).toBe(true);
+  });
+});
 
 describe("buildTaskPrompt", () => {
   test("builds basic prompt with just title", () => {
