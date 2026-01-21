@@ -1,14 +1,21 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
-import { writeFileSync, mkdirSync, rmSync, existsSync } from "fs";
+import { writeFileSync, mkdirSync, rmSync, existsSync, readFileSync } from "fs";
 import {
   detectEpicFromBranch,
   loadSprintStatus,
+  saveSprintStatus,
   findNextStory,
   getWorkflowForStatus,
   runBmadWorkflow,
+  executeSlashCommand,
   type Story,
   type SprintStatus,
 } from "../../lib/src/workflows/bmad";
+import {
+  validateSlashCommand,
+  buildSlashCommand,
+  parseSlashCommandResult,
+} from "../../lib/src/integrations/bmad-cli";
 import { RbpConfigSchema } from "../../lib/src/config/schema";
 
 const TEST_DIR = "/tmp/bmad-test";
@@ -17,6 +24,60 @@ describe("detectEpicFromBranch", () => {
   test("returns null when not in git repo or no epic branch", () => {
     const result = detectEpicFromBranch();
     expect(result === null || typeof result === "string").toBe(true);
+  });
+});
+
+describe("validateSlashCommand", () => {
+  test("returns true for valid slash commands", () => {
+    expect(validateSlashCommand("/bmad:create-story")).toBe(true);
+    expect(validateSlashCommand("/help")).toBe(true);
+    expect(validateSlashCommand("/bmad:bmm:workflows:dev-story")).toBe(true);
+  });
+
+  test("returns false for invalid slash commands", () => {
+    expect(validateSlashCommand("")).toBe(false);
+    expect(validateSlashCommand("/")).toBe(false);
+    expect(validateSlashCommand("bmad:create")).toBe(false);
+    expect(validateSlashCommand("no-slash")).toBe(false);
+  });
+});
+
+describe("buildSlashCommand", () => {
+  test("builds command without story ID", () => {
+    const command = buildSlashCommand("/bmad:create-story");
+    expect(command).toBe("/bmad:create-story");
+  });
+
+  test("builds command with story ID", () => {
+    const command = buildSlashCommand("/bmad:dev-story", "story-123");
+    expect(command).toBe("/bmad:dev-story story-123");
+  });
+
+  test("builds command with story ID and additional args", () => {
+    const command = buildSlashCommand("/bmad:dev-story", "story-123", ["--verbose", "--dry-run"]);
+    expect(command).toBe("/bmad:dev-story story-123 --verbose --dry-run");
+  });
+});
+
+describe("parseSlashCommandResult", () => {
+  test("parses successful result", () => {
+    const result = parseSlashCommandResult(
+      { stdout: "Success output", stderr: "", exitCode: 0 },
+      "/test"
+    );
+    expect(result.success).toBe(true);
+    expect(result.output).toBe("Success output");
+    expect(result.error).toBeUndefined();
+  });
+
+  test("parses failed result", () => {
+    const result = parseSlashCommandResult(
+      { stdout: "", stderr: "Error occurred", exitCode: 1 },
+      "/test"
+    );
+    expect(result.success).toBe(false);
+    expect(result.error).toBeDefined();
+    expect(result.error?.code).toBe("BMAD_COMMAND_FAILED");
   });
 });
 
@@ -73,6 +134,58 @@ stories:
     const result = loadSprintStatus(`${TEST_DIR}/invalid.yaml`);
     // Should return null when parsing fails, or the parsed content if yaml lib is lenient
     expect(result === null || typeof result === "object").toBe(true);
+  });
+});
+
+describe("saveSprintStatus", () => {
+  beforeEach(() => {
+    if (existsSync(TEST_DIR)) {
+      rmSync(TEST_DIR, { recursive: true });
+    }
+    mkdirSync(TEST_DIR, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (existsSync(TEST_DIR)) {
+      rmSync(TEST_DIR, { recursive: true });
+    }
+  });
+
+  test("saves sprint status to file", () => {
+    const status: SprintStatus = {
+      epic: "5",
+      stories: [
+        { id: "5-1", title: "Test Story", status: "backlog" },
+      ],
+    };
+
+    const result = saveSprintStatus(`${TEST_DIR}/save-test.yaml`, status);
+    expect(result).toBe(true);
+
+    const loaded = loadSprintStatus(`${TEST_DIR}/save-test.yaml`);
+    expect(loaded).not.toBeNull();
+    expect(loaded?.epic).toBe("5");
+    expect(loaded?.stories[0].id).toBe("5-1");
+  });
+
+  test("updates existing file", () => {
+    const initialStatus: SprintStatus = {
+      epic: "1",
+      stories: [{ id: "1-1", title: "Story 1", status: "backlog" }],
+    };
+
+    saveSprintStatus(`${TEST_DIR}/update-test.yaml`, initialStatus);
+
+    const updatedStatus: SprintStatus = {
+      epic: "1",
+      stories: [{ id: "1-1", title: "Story 1", status: "in-progress" }],
+    };
+
+    const result = saveSprintStatus(`${TEST_DIR}/update-test.yaml`, updatedStatus);
+    expect(result).toBe(true);
+
+    const loaded = loadSprintStatus(`${TEST_DIR}/update-test.yaml`);
+    expect(loaded?.stories[0].status).toBe("in-progress");
   });
 });
 
@@ -355,5 +468,55 @@ stories:
 
     const result = findNextStory(status);
     expect(result).toBeNull(); // review is not a "next" status
+  });
+
+  test("auto-saves sprint status after successful transition", async () => {
+    const yaml = `
+epic: "8"
+stories:
+  - id: "8-1"
+    title: "Story to auto-save"
+    status: "in-progress"
+`;
+    writeFileSync(`${WORKFLOW_TEST_DIR}/sprint-status.yaml`, yaml);
+
+    const mockInvoker = async () => {};
+
+    await runBmadWorkflow({
+      config,
+      sprintStatusPath: `${WORKFLOW_TEST_DIR}/sprint-status.yaml`,
+      maxIterations: 1,
+      invokeSlashCommand: mockInvoker,
+      autoSave: true,
+    });
+
+    // Verify the file was updated
+    const savedStatus = loadSprintStatus(`${WORKFLOW_TEST_DIR}/sprint-status.yaml`);
+    expect(savedStatus?.stories[0].status).toBe("review");
+  });
+
+  test("does not auto-save when autoSave is false", async () => {
+    const yaml = `
+epic: "9"
+stories:
+  - id: "9-1"
+    title: "Story no auto-save"
+    status: "in-progress"
+`;
+    writeFileSync(`${WORKFLOW_TEST_DIR}/sprint-status.yaml`, yaml);
+
+    const mockInvoker = async () => {};
+
+    await runBmadWorkflow({
+      config,
+      sprintStatusPath: `${WORKFLOW_TEST_DIR}/sprint-status.yaml`,
+      maxIterations: 1,
+      invokeSlashCommand: mockInvoker,
+      autoSave: false,
+    });
+
+    // Verify the file was NOT updated (still original status)
+    const savedStatus = loadSprintStatus(`${WORKFLOW_TEST_DIR}/sprint-status.yaml`);
+    expect(savedStatus?.stories[0].status).toBe("in-progress");
   });
 });

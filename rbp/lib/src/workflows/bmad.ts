@@ -1,9 +1,16 @@
-import { existsSync, readFileSync } from "fs";
-import { parse as parseYaml } from "yaml";
+import { existsSync, readFileSync, writeFileSync } from "fs";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { RbpConfig } from "../config/types";
 import { logger } from "../observability/logger";
-import { emitWorkflowStart, emitWorkflowComplete } from "../observability/events";
+import { emitWorkflowStart, emitWorkflowComplete, emitTaskStart, emitTaskComplete, emitTaskFailed } from "../observability/events";
 import { createError, ErrorCodes, type RbpError } from "../utils/errors";
+import {
+  invokeSlashCommand as invokeCliSlashCommand,
+  checkClaudeInstalled,
+  validateSlashCommand,
+  buildSlashCommand,
+  type BmadSlashCommandOptions,
+} from "../integrations/bmad-cli";
 
 export type StoryStatus = "backlog" | "drafted" | "ready-for-dev" | "in-progress" | "review" | "done";
 
@@ -26,6 +33,8 @@ export interface BmadWorkflowOptions {
   dryRun?: boolean;
   sprintStatusPath?: string;
   invokeSlashCommand?: (command: string, args?: string[]) => Promise<void>;
+  slashCommandOptions?: BmadSlashCommandOptions;
+  autoSave?: boolean;
 }
 
 export interface BmadWorkflowResult {
@@ -78,6 +87,38 @@ export function loadSprintStatus(path: string): SprintStatus | null {
   }
 }
 
+export function saveSprintStatus(path: string, status: SprintStatus): boolean {
+  try {
+    const content = stringifyYaml(status);
+    writeFileSync(path, content, "utf-8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function executeSlashCommand(
+  command: string,
+  storyId?: string,
+  options?: BmadSlashCommandOptions
+): Promise<{ success: boolean; output?: string; error?: string }> {
+  if (!validateSlashCommand(command)) {
+    return {
+      success: false,
+      error: `Invalid slash command format: ${command}`,
+    };
+  }
+
+  const fullCommand = buildSlashCommand(command, storyId);
+  const result = await invokeCliSlashCommand(fullCommand, [], options);
+
+  return {
+    success: result.success,
+    output: result.output,
+    error: result.error?.message,
+  };
+}
+
 export function findNextStory(status: SprintStatus): Story | null {
   const storyOrder: StoryStatus[] = ["in-progress", "ready-for-dev", "drafted", "backlog"];
 
@@ -114,6 +155,8 @@ export async function runBmadWorkflow(options: BmadWorkflowOptions): Promise<Bma
     maxIterations = config.execution.max_iterations,
     dryRun = false,
     invokeSlashCommand,
+    slashCommandOptions,
+    autoSave = true,
   } = options;
 
   const sprintStatusPath = options.sprintStatusPath ?? `${process.cwd()}/docs/bmm/sprint-status.yaml`;
@@ -149,6 +192,11 @@ export async function runBmadWorkflow(options: BmadWorkflowOptions): Promise<Bma
   logger.info(`Max Iterations: ${maxIterations}`);
   logger.info(`Dry Run: ${dryRun}`);
 
+  const useIntegratedCli = !invokeSlashCommand && (await checkClaudeInstalled());
+  if (useIntegratedCli) {
+    logger.info("Using integrated Claude CLI for slash commands");
+  }
+
   while (iteration < maxIterations) {
     iteration++;
 
@@ -177,25 +225,45 @@ export async function runBmadWorkflow(options: BmadWorkflowOptions): Promise<Bma
     }
 
     logger.info(`Running workflow: ${workflow}`);
+    emitTaskStart(story.id, story.title);
+
+    let workflowSuccess = false;
 
     if (invokeSlashCommand) {
       try {
         await invokeSlashCommand(workflow, [story.id]);
-
-        const nextStatus = STATUS_TRANSITIONS[story.status];
-        if (nextStatus) {
-          story.status = nextStatus;
-          if (nextStatus === "done") {
-            storiesCompleted++;
-          }
-        }
-
-        logger.success(`Story ${story.id} transitioned to: ${story.status}`);
+        workflowSuccess = true;
       } catch (error) {
         logger.error(`Workflow failed: ${error instanceof Error ? error.message : String(error)}`);
+        emitTaskFailed(story.id, story.title, error instanceof Error ? error.message : String(error));
+      }
+    } else if (useIntegratedCli) {
+      const result = await executeSlashCommand(workflow, story.id, slashCommandOptions);
+      if (result.success) {
+        workflowSuccess = true;
+      } else {
+        logger.error(`Workflow failed: ${result.error}`);
+        emitTaskFailed(story.id, story.title, result.error ?? "Unknown error");
       }
     } else {
-      logger.warn("No slash command invoker provided - skipping execution");
+      logger.warn("No slash command invoker provided and Claude CLI not available - skipping execution");
+    }
+
+    if (workflowSuccess) {
+      const nextStatus = STATUS_TRANSITIONS[story.status];
+      if (nextStatus) {
+        story.status = nextStatus;
+        if (nextStatus === "done") {
+          storiesCompleted++;
+        }
+
+        if (autoSave) {
+          saveSprintStatus(sprintStatusPath, sprintStatus);
+        }
+      }
+
+      logger.success(`Story ${story.id} transitioned to: ${story.status}`);
+      emitTaskComplete(story.id, story.title);
     }
 
     await new Promise((resolve) => setTimeout(resolve, config.execution.iteration_delay * 1000));
