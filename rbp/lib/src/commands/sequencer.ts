@@ -22,10 +22,10 @@ export async function sequencerCommand(storyId: string, options: SequencerOption
 
   const phaseSize = options.phaseSize ? parseInt(options.phaseSize, 10) : 5;
 
-  if (isNaN(phaseSize) || phaseSize < 1) {
+  if (!Number.isInteger(phaseSize) || phaseSize < 1) {
     exitWithError(
-      createError(ErrorCodes.INVALID_ARGUMENT, "Phase size must be a positive number", {
-        suggestion: "Use a number like 3, 5, or 10",
+      createError(ErrorCodes.INVALID_ARGUMENT, "Phase size must be a positive integer", {
+        suggestion: "Provide a positive integer >= 1",
       })
     );
   }

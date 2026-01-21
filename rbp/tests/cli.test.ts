@@ -102,6 +102,32 @@ describe("parseMaxIterations", () => {
     // parseInt truncates floats, so "3.5" becomes 3 which is valid
     expect(parseMaxIterations("3.5", 50)).toBe(3);
   });
+
+  test("exits with error for NaN-producing input", () => {
+    const originalExit = process.exit;
+    let exitCode: number | undefined;
+
+    process.exit = ((code: number) => {
+      exitCode = code;
+      throw new Error("process.exit called");
+    }) as any;
+
+    try {
+      // Various inputs that produce NaN from parseInt
+      expect(() => parseMaxIterations("NaN", 50)).toThrow("process.exit called");
+      expect(exitCode).toBe(1);
+
+      exitCode = undefined;
+      expect(() => parseMaxIterations("", 50)).toThrow("process.exit called");
+      expect(exitCode).toBe(1);
+
+      exitCode = undefined;
+      expect(() => parseMaxIterations("not-a-number", 50)).toThrow("process.exit called");
+      expect(exitCode).toBe(1);
+    } finally {
+      process.exit = originalExit;
+    }
+  });
 });
 
 describe("getGlobalOptions", () => {
