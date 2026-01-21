@@ -81,10 +81,10 @@ Find your task in the story's task list and change `[ ]` to `[x]`.
 
 ```bash
 # Close with test verification
-./scripts/rbp/ralph.sh close <bead-id>
+ralph close <bead-id>
 
 # For UI tasks, add --playwright flag
-./scripts/rbp/ralph.sh close <bead-id> --playwright
+ralph close <bead-id> --playwright
 ```
 
 **DO NOT** manually run `bd close` - always use `ralph close`.
