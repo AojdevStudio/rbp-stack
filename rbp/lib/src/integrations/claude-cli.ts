@@ -35,24 +35,45 @@ export async function invokeClaude(options: ClaudeInvokeOptions): Promise<Claude
 
   const args = ["claude", "--print", "-p", prompt];
 
-  const proc = Bun.spawn(args, {
-    stdout: "pipe",
-    stderr: "pipe",
-    cwd: workingDir,
+  let proc: ReturnType<typeof Bun.spawn>;
+  try {
+    proc = Bun.spawn(args, {
+      stdout: "pipe",
+      stderr: "pipe",
+      cwd: workingDir,
+    });
+  } catch (error) {
+    // Handle case where claude CLI is not installed (ENOENT)
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      error: createError(ErrorCodes.CLAUDE_FAILED, "Claude CLI not found or failed to start", {
+        details: { error: errorMessage },
+        suggestion: "Ensure claude CLI is installed and available in PATH",
+      }),
+    };
+  }
+
+  const timeoutPromise = new Promise<{ timedOut: true }>((resolve) => {
+    setTimeout(() => {
+      proc.kill();
+      resolve({ timedOut: true });
+    }, timeout);
   });
 
-  const timeoutId = setTimeout(() => {
-    proc.kill();
-  }, timeout);
+  const executionPromise = (async (): Promise<{ timedOut: false; stdout: string; stderr: string; exitCode: number }> => {
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    return { timedOut: false, stdout, stderr, exitCode };
+  })();
 
   try {
-    const stdout = await new Response(proc.stdout).text();
-    const stderr = await new Response(proc.stderr).text();
-    const exitCode = await proc.exited;
+    const result = await Promise.race([executionPromise, timeoutPromise]);
 
-    clearTimeout(timeoutId);
-
-    if (exitCode === null) {
+    if (result.timedOut) {
       return {
         success: false,
         timedOut: true,
@@ -62,6 +83,8 @@ export async function invokeClaude(options: ClaudeInvokeOptions): Promise<Claude
         }),
       };
     }
+
+    const { stdout, stderr, exitCode } = result;
 
     if (exitCode !== 0) {
       return {
@@ -78,7 +101,7 @@ export async function invokeClaude(options: ClaudeInvokeOptions): Promise<Claude
       output: stdout,
     };
   } catch (error) {
-    clearTimeout(timeoutId);
+    proc.kill();
     return {
       success: false,
       error: createError(ErrorCodes.CLAUDE_FAILED, "Claude invocation error", {
