@@ -68,6 +68,45 @@ describe("config schema", () => {
       expect(result.success).toBe(true);
     }
   });
+
+  test("provides defaults for quick_plan", () => {
+    const config = { project: { name: "test" } };
+    const result = RbpConfigSchema.parse(config);
+    expect(result.quick_plan.command).toBe("/quick-plan");
+    expect(result.quick_plan.spec_template).toBe("templates/spec-template.md");
+  });
+
+  test("provides defaults for paths.commands", () => {
+    const config = { project: { name: "test" } };
+    const result = RbpConfigSchema.parse(config);
+    expect(result.paths.commands).toBe(".claude/commands/rbp");
+  });
+
+  test("provides defaults for observability.pai_install_check", () => {
+    const config = { project: { name: "test" } };
+    const result = RbpConfigSchema.parse(config);
+    expect(result.observability.pai_install_check).toBe(true);
+  });
+
+  test("provides defaults for hooks", () => {
+    const config = { project: { name: "test" } };
+    const result = RbpConfigSchema.parse(config);
+    expect(result.hooks.session_start).toEqual([]);
+    expect(result.hooks.pre_compact).toEqual([]);
+  });
+
+  test("parses hooks from config", () => {
+    const config = {
+      project: { name: "test" },
+      hooks: {
+        session_start: ["bd prime 2>/dev/null || true"],
+        pre_compact: ["scripts/rbp/save-progress.sh"],
+      },
+    };
+    const result = RbpConfigSchema.parse(config);
+    expect(result.hooks.session_start).toEqual(["bd prime 2>/dev/null || true"]);
+    expect(result.hooks.pre_compact).toEqual(["scripts/rbp/save-progress.sh"]);
+  });
 });
 
 describe("config loader", () => {

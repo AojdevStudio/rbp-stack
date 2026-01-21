@@ -11,6 +11,7 @@ export const RbpConfigSchema = z.object({
     specs: z.string().default("specs"),
     beads: z.string().default(".beads"),
     scripts: z.string().default("scripts/rbp"),
+    commands: z.string().default(".claude/commands/rbp"),
   }).default({}),
 
   execution: z.object({
@@ -42,6 +43,11 @@ export const RbpConfigSchema = z.object({
     code_review: z.string().default("/bmad:bmm:workflows:code-review"),
   }).default({}),
 
+  quick_plan: z.object({
+    command: z.string().default("/quick-plan"),
+    spec_template: z.string().default("templates/spec-template.md"),
+  }).default({}),
+
   codex: z.object({
     enabled: z.boolean().default(true),
     model: z.string().default("gpt-5-codex"),
@@ -52,6 +58,12 @@ export const RbpConfigSchema = z.object({
   observability: z.object({
     enabled: z.boolean().default(true),
     auto_launch: z.boolean().default(true),
+    pai_install_check: z.boolean().default(true),
+  }).default({}),
+
+  hooks: z.object({
+    session_start: z.array(z.string()).default([]),
+    pre_compact: z.array(z.string()).default([]),
   }).default({}),
 }).partial().transform((config) => ({
   project: config.project ?? { name: "unknown" },
@@ -60,6 +72,7 @@ export const RbpConfigSchema = z.object({
     specs: config.paths?.specs ?? "specs",
     beads: config.paths?.beads ?? ".beads",
     scripts: config.paths?.scripts ?? "scripts/rbp",
+    commands: config.paths?.commands ?? ".claude/commands/rbp",
   },
   execution: {
     max_iterations: config.execution?.max_iterations ?? 50,
@@ -86,6 +99,10 @@ export const RbpConfigSchema = z.object({
     dev_story: config.bmad?.dev_story ?? "/bmad:bmm:workflows:dev-story",
     code_review: config.bmad?.code_review ?? "/bmad:bmm:workflows:code-review",
   },
+  quick_plan: {
+    command: config.quick_plan?.command ?? "/quick-plan",
+    spec_template: config.quick_plan?.spec_template ?? "templates/spec-template.md",
+  },
   codex: {
     enabled: config.codex?.enabled ?? true,
     model: config.codex?.model ?? "gpt-5-codex",
@@ -95,5 +112,10 @@ export const RbpConfigSchema = z.object({
   observability: {
     enabled: config.observability?.enabled ?? true,
     auto_launch: config.observability?.auto_launch ?? true,
+    pai_install_check: config.observability?.pai_install_check ?? true,
+  },
+  hooks: {
+    session_start: config.hooks?.session_start ?? [],
+    pre_compact: config.hooks?.pre_compact ?? [],
   },
 }));
