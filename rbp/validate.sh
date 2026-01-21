@@ -10,9 +10,14 @@ set -e
 # Get project root (parent of scripts/rbp)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Determine if we're in scripts/rbp or the rbp package root
+# Determine validation mode: source package vs installed project
+SOURCE_MODE=false
 if [[ "$SCRIPT_DIR" == */scripts/rbp ]]; then
   PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+elif [[ "$SCRIPT_DIR" == */rbp ]] && [ -f "$SCRIPT_DIR/lib/src/index.ts" ]; then
+  # Running from RBP source package
+  PROJECT_ROOT="$SCRIPT_DIR"
+  SOURCE_MODE=true
 elif [[ "$SCRIPT_DIR" == */rbp ]]; then
   PROJECT_ROOT="$SCRIPT_DIR"
 else
@@ -52,6 +57,11 @@ echo "           RBP Stack Validation"
 echo "═══════════════════════════════════════════════════════"
 echo -e "${NC}"
 echo "Project: $PROJECT_ROOT"
+if [ "$SOURCE_MODE" = true ]; then
+  echo -e "Mode: ${YELLOW}Source Package${NC}"
+else
+  echo -e "Mode: ${GREEN}Installed${NC}"
+fi
 echo ""
 
 # Prerequisites
@@ -80,10 +90,20 @@ echo ""
 # Directory Structure
 echo -e "${YELLOW}Directory Structure:${NC}"
 
-if [ -d "$PROJECT_ROOT/scripts/rbp" ]; then
-  check_pass "scripts/rbp/ exists"
+if [ "$SOURCE_MODE" = true ]; then
+  # Source package mode - check for lib/src
+  if [ -d "$PROJECT_ROOT/lib/src" ]; then
+    check_pass "lib/src/ exists (source mode)"
+  else
+    check_fail "lib/src/ missing"
+  fi
 else
-  check_fail "scripts/rbp/ missing"
+  # Installed mode - check for scripts/rbp
+  if [ -d "$PROJECT_ROOT/scripts/rbp" ]; then
+    check_pass "scripts/rbp/ exists"
+  else
+    check_fail "scripts/rbp/ missing"
+  fi
 fi
 
 if [ -d "$PROJECT_ROOT/.claude/commands/rbp" ]; then
@@ -103,29 +123,51 @@ echo ""
 # Scripts
 echo -e "${YELLOW}Scripts:${NC}"
 
-REQUIRED_SCRIPTS=(
-  "ralph.sh"
-  "prompt.md"
-)
-
-for script in "${REQUIRED_SCRIPTS[@]}"; do
-  if [ -f "$PROJECT_ROOT/scripts/rbp/$script" ]; then
-    check_pass "$script"
+if [ "$SOURCE_MODE" = true ]; then
+  # Source package mode
+  if [ -f "$PROJECT_ROOT/ralph.sh" ]; then
+    check_pass "ralph.sh"
   else
-    check_fail "$script missing"
+    check_fail "ralph.sh missing"
   fi
-done
+
+  if [ -f "$PROJECT_ROOT/scripts/prompt.md" ]; then
+    check_pass "scripts/prompt.md"
+  else
+    check_fail "scripts/prompt.md missing"
+  fi
+else
+  # Installed mode
+  REQUIRED_SCRIPTS=(
+    "ralph.sh"
+    "prompt.md"
+  )
+
+  for script in "${REQUIRED_SCRIPTS[@]}"; do
+    if [ -f "$PROJECT_ROOT/scripts/rbp/$script" ]; then
+      check_pass "$script"
+    else
+      check_fail "$script missing"
+    fi
+  done
+fi
 
 echo ""
 
 # TypeScript CLI
 echo -e "${YELLOW}TypeScript CLI:${NC}"
 
-if [ -f "$PROJECT_ROOT/scripts/rbp/lib/dist/index.js" ]; then
+if [ "$SOURCE_MODE" = true ]; then
+  CLI_PATH="$PROJECT_ROOT/lib/dist/index.js"
+else
+  CLI_PATH="$PROJECT_ROOT/scripts/rbp/lib/dist/index.js"
+fi
+
+if [ -f "$CLI_PATH" ]; then
   check_pass "lib/dist/index.js (compiled CLI)"
 
   # Verify CLI is executable
-  if bun "$PROJECT_ROOT/scripts/rbp/lib/dist/index.js" --version &>/dev/null; then
+  if bun "$CLI_PATH" --version &>/dev/null; then
     check_pass "CLI executable and responds to --version"
   else
     check_warn "CLI exists but may not be functional"
