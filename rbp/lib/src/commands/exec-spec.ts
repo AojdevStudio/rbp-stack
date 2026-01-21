@@ -5,6 +5,7 @@ import { runBeadsWorkflow } from "../workflows/beads";
 import { emitCodexReview, emitSpecParsed } from "../observability/events";
 import { logger, setLogLevel } from "../observability/logger";
 import { exitWithError, createError, ErrorCodes } from "../utils/errors";
+import { parseSpecToBeads as parseSpecToBeadsImpl } from "../parsers/spec-to-beads";
 
 export interface ExecSpecOptions {
   skipReview?: boolean;
@@ -82,38 +83,16 @@ Provide specific, actionable improvements. Be concise.`;
   await new Promise((resolve) => setTimeout(resolve, 2000));
 }
 
-async function parseSpecToBeads(specFile: string, config: any): Promise<number> {
-  logger.section("Parse Spec to Beads");
+async function parseSpecToBeads(specFile: string, _config: any): Promise<number> {
+  const result = await parseSpecToBeadsImpl(specFile);
 
-  const scriptPath = `${config.paths.scripts}/parse-spec-to-beads.sh`;
-
-  if (!existsSync(scriptPath)) {
-    logger.warn("parse-spec-to-beads.sh not found, skipping parsing");
+  if (!result.success) {
+    logger.error(`Failed to parse spec: ${result.error}`);
     return 0;
   }
 
-  const proc = Bun.spawn(["bash", scriptPath, specFile], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  const stdout = await new Response(proc.stdout).text();
-  const exitCode = await proc.exited;
-
-  console.log(stdout);
-
-  if (exitCode !== 0) {
-    logger.error("Failed to parse spec to beads");
-    return 0;
-  }
-
-  const match = stdout.match(/Tasks Created:\s*(\d+)/);
-  const taskCount = match ? parseInt(match[1], 10) : 0;
-
-  emitSpecParsed(specFile, taskCount);
-  logger.success(`Parsed ${taskCount} tasks from spec`);
-
-  return taskCount;
+  emitSpecParsed(specFile, result.tasksCreated);
+  return result.tasksCreated;
 }
 
 export async function execSpecCommand(file: string, options: ExecSpecOptions): Promise<void> {
