@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createError, ErrorCodes, type RbpError } from "../utils/errors";
+import { findProjectRoot } from "../utils/project-detector";
 
 export const BeadSchema = z.object({
   id: z.string(),
@@ -216,10 +217,12 @@ export function calculateBeadsStatus(
   };
 }
 
-async function runBeadsCommand(args: string[]): Promise<CommandResult> {
+async function runBeadsCommand(args: string[], cwd?: string): Promise<CommandResult> {
+  const workingDir = cwd ?? findProjectRoot();
   const proc = Bun.spawn(["bd", ...args], {
     stdout: "pipe",
     stderr: "pipe",
+    cwd: workingDir,
   });
 
   const stdout = await new Response(proc.stdout).text();

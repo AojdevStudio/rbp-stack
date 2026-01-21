@@ -52,15 +52,15 @@ export async function execSpecCommand(file: string, options: ExecSpecOptions): P
 
   logger.banner("Ralph Execute - Spec Runner", "RBP Stack v3.0");
 
+  const projectRoot = findProjectRoot();
   let specFile = file;
   if (!existsSync(specFile)) {
     const specsDir = config.paths.specs;
-    const projectRoot = findProjectRoot();
     const candidates = [
-      `${specsDir}/${file}`,
-      `${specsDir}/${file}.md`,
       join(projectRoot, specsDir, file),
       join(projectRoot, specsDir, `${file}.md`),
+      join(specsDir, file),
+      join(specsDir, `${file}.md`),
     ];
 
     for (const candidate of candidates) {
@@ -118,6 +118,7 @@ export async function execSpecCommand(file: string, options: ExecSpecOptions): P
       const proc = Bun.spawn(parseShellCommand(config.verification.test_command), {
         stdout: "pipe",
         stderr: "pipe",
+        cwd: projectRoot,
       });
       const [stdout, stderr, exitCode] = await Promise.all([
         new Response(proc.stdout).text(),

@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "fs";
+import { join } from "path";
 import { parse as parseYaml } from "yaml";
 import { RbpConfigSchema } from "./schema";
 import { findProjectRoot } from "../utils/project-detector";
@@ -8,7 +9,7 @@ const DEFAULT_CONFIG_PATHS = ["rbp-config.yaml", "rbp-config.yml", ".rbp/config.
 
 function findConfigFile(basePath: string): string | null {
   for (const configPath of DEFAULT_CONFIG_PATHS) {
-    const fullPath = `${basePath}/${configPath}`;
+    const fullPath = join(basePath, configPath);
     if (existsSync(fullPath)) {
       return fullPath;
     }

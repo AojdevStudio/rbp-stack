@@ -107,7 +107,9 @@ export function hasQuickPlanSpecs(projectRoot: string): boolean {
   if (!existsSync(specsDir)) return false;
 
   try {
-    const proc = Bun.spawnSync(["sh", "-c", `ls "${specsDir}"/*.md 2>/dev/null | xargs grep -l "RBP-TASKS-START" 2>/dev/null | head -1`]);
+    const proc = Bun.spawnSync(["sh", "-c", `ls "${specsDir}"/*.md 2>/dev/null | xargs grep -l "RBP-TASKS-START" 2>/dev/null | head -1`], {
+      cwd: projectRoot,
+    });
     const output = new TextDecoder().decode(proc.stdout).trim();
     return output.length > 0;
   } catch {
@@ -123,7 +125,9 @@ export function findQuickPlanSpec(projectRoot: string): string | null {
   if (!existsSync(specsDir)) return null;
 
   try {
-    const proc = Bun.spawnSync(["sh", "-c", `ls "${specsDir}"/*.md 2>/dev/null | xargs grep -l "RBP-TASKS-START" 2>/dev/null | head -1`]);
+    const proc = Bun.spawnSync(["sh", "-c", `ls "${specsDir}"/*.md 2>/dev/null | xargs grep -l "RBP-TASKS-START" 2>/dev/null | head -1`], {
+      cwd: projectRoot,
+    });
     const output = new TextDecoder().decode(proc.stdout).trim();
     return output || null;
   } catch {

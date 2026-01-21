@@ -32,6 +32,7 @@ export async function runCommand(options: RunOptions): Promise<void> {
 
   logger.banner("Ralph - Autonomous Execution Loop", "RBP Stack v3.0");
 
+  const projectRoot = findProjectRoot();
   let workflow: "bmad" | "beads" | null = null;
 
   if (options.bmad) {
@@ -39,7 +40,6 @@ export async function runCommand(options: RunOptions): Promise<void> {
   } else if (options.beads) {
     workflow = "beads";
   } else {
-    const projectRoot = findProjectRoot();
     const sprintStatusPath = findSprintStatusPath(projectRoot);
     const beadsInstalled = await checkBeadsInstalled();
 
@@ -98,6 +98,7 @@ export async function runCommand(options: RunOptions): Promise<void> {
             stdin: "pipe",
             stdout: "pipe",
             stderr: "pipe",
+            cwd: projectRoot,
           }
         );
 
@@ -137,6 +138,7 @@ Execute this task following the RBP Protocol. Run tests to verify completion bef
         const proc = Bun.spawn(parseShellCommand(config.verification.test_command), {
           stdout: "pipe",
           stderr: "pipe",
+          cwd: projectRoot,
         });
         const [stdout, stderr, exitCode] = await Promise.all([
           new Response(proc.stdout).text(),
@@ -172,6 +174,7 @@ Execute this task following the RBP Protocol. Run tests to verify completion bef
             stdin: "pipe",
             stdout: "pipe",
             stderr: "pipe",
+            cwd: projectRoot,
           }
         );
 
