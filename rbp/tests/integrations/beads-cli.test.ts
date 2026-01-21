@@ -3,10 +3,17 @@ import {
   BeadSchema,
   BeadListSchema,
   type Bead,
+  type CommandResult,
   checkBeadsInstalled,
   listBeads,
   getBeadsStatus,
   getReadyBead,
+  parseReadyBeadOutput,
+  parseListBeadsOutput,
+  parseShowBeadOutput,
+  parseChildrenOutput,
+  buildCreateBeadArgs,
+  calculateBeadsStatus,
 } from "../../lib/src/integrations/beads-cli";
 
 // Helper to create mock spawn results
@@ -228,6 +235,350 @@ describe("BeadCliResult parsing", () => {
     };
     const result = BeadSchema.safeParse(bead);
     expect(result.success).toBe(true);
+  });
+});
+
+// Tests for extracted parsing functions (pure functions, no CLI calls)
+describe("parseReadyBeadOutput", () => {
+  test("parses successful output with bead", () => {
+    const result: CommandResult = {
+      stdout: JSON.stringify([{ id: "test-1", title: "Test Task", status: "open" }]),
+      stderr: "",
+      exitCode: 0,
+    };
+
+    const parsed = parseReadyBeadOutput(result);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.id).toBe("test-1");
+    expect(parsed.data?.title).toBe("Test Task");
+  });
+
+  test("parses successful output with single object", () => {
+    const result: CommandResult = {
+      stdout: JSON.stringify({ id: "test-2", title: "Single Task", status: "in_progress" }),
+      stderr: "",
+      exitCode: 0,
+    };
+
+    const parsed = parseReadyBeadOutput(result);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.id).toBe("test-2");
+  });
+
+  test("returns null for empty array", () => {
+    const result: CommandResult = {
+      stdout: "[]",
+      stderr: "",
+      exitCode: 0,
+    };
+
+    const parsed = parseReadyBeadOutput(result);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toBeNull();
+  });
+
+  test("handles No open issues in stderr", () => {
+    const result: CommandResult = {
+      stdout: "",
+      stderr: "No open issues",
+      exitCode: 1,
+    };
+
+    const parsed = parseReadyBeadOutput(result);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toBeNull();
+  });
+
+  test("handles No open issues in stdout", () => {
+    const result: CommandResult = {
+      stdout: "No open issues",
+      stderr: "",
+      exitCode: 1,
+    };
+
+    const parsed = parseReadyBeadOutput(result);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toBeNull();
+  });
+
+  test("returns error for non-zero exit code", () => {
+    const result: CommandResult = {
+      stdout: "",
+      stderr: "Command failed",
+      exitCode: 1,
+    };
+
+    const parsed = parseReadyBeadOutput(result);
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.code).toBe("BEADS_COMMAND_FAILED");
+  });
+
+  test("returns error for invalid JSON", () => {
+    const result: CommandResult = {
+      stdout: "not valid json",
+      stderr: "",
+      exitCode: 0,
+    };
+
+    const parsed = parseReadyBeadOutput(result);
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.code).toBe("BEADS_PARSE_ERROR");
+  });
+
+  test("returns error for invalid bead schema", () => {
+    const result: CommandResult = {
+      stdout: JSON.stringify([{ id: "test", status: "invalid_status" }]),
+      stderr: "",
+      exitCode: 0,
+    };
+
+    const parsed = parseReadyBeadOutput(result);
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.code).toBe("BEADS_PARSE_ERROR");
+  });
+});
+
+describe("parseListBeadsOutput", () => {
+  test("parses successful output with beads", () => {
+    const result: CommandResult = {
+      stdout: JSON.stringify([
+        { id: "test-1", title: "Task 1", status: "open" },
+        { id: "test-2", title: "Task 2", status: "closed" },
+      ]),
+      stderr: "",
+      exitCode: 0,
+    };
+
+    const parsed = parseListBeadsOutput(result);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toHaveLength(2);
+    expect(parsed.data?.[0].id).toBe("test-1");
+  });
+
+  test("parses empty list", () => {
+    const result: CommandResult = {
+      stdout: "[]",
+      stderr: "",
+      exitCode: 0,
+    };
+
+    const parsed = parseListBeadsOutput(result);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toHaveLength(0);
+  });
+
+  test("handles empty stdout", () => {
+    const result: CommandResult = {
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+    };
+
+    const parsed = parseListBeadsOutput(result);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toHaveLength(0);
+  });
+
+  test("returns error for non-zero exit code", () => {
+    const result: CommandResult = {
+      stdout: "",
+      stderr: "bd list failed",
+      exitCode: 1,
+    };
+
+    const parsed = parseListBeadsOutput(result);
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.code).toBe("BEADS_COMMAND_FAILED");
+  });
+
+  test("returns error for invalid JSON", () => {
+    const result: CommandResult = {
+      stdout: "invalid json",
+      stderr: "",
+      exitCode: 0,
+    };
+
+    const parsed = parseListBeadsOutput(result);
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.code).toBe("BEADS_PARSE_ERROR");
+  });
+});
+
+describe("parseShowBeadOutput", () => {
+  test("parses successful output", () => {
+    const result: CommandResult = {
+      stdout: JSON.stringify({ id: "task-123", title: "My Task", status: "in_progress", priority: "P1" }),
+      stderr: "",
+      exitCode: 0,
+    };
+
+    const parsed = parseShowBeadOutput(result, "task-123");
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.id).toBe("task-123");
+    expect(parsed.data?.priority).toBe("P1");
+  });
+
+  test("returns error for non-zero exit code", () => {
+    const result: CommandResult = {
+      stdout: "",
+      stderr: "Issue not found",
+      exitCode: 1,
+    };
+
+    const parsed = parseShowBeadOutput(result, "missing-123");
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.message).toContain("missing-123");
+  });
+
+  test("returns error for invalid JSON", () => {
+    const result: CommandResult = {
+      stdout: "not json",
+      stderr: "",
+      exitCode: 0,
+    };
+
+    const parsed = parseShowBeadOutput(result, "test");
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.code).toBe("BEADS_PARSE_ERROR");
+  });
+});
+
+describe("parseChildrenOutput", () => {
+  test("parses successful output with children", () => {
+    const result: CommandResult = {
+      stdout: JSON.stringify([
+        { id: "child-1", title: "Subtask 1", status: "open" },
+        { id: "child-2", title: "Subtask 2", status: "closed" },
+      ]),
+      stderr: "",
+      exitCode: 0,
+    };
+
+    const parsed = parseChildrenOutput(result, "parent-1");
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toHaveLength(2);
+  });
+
+  test("parses empty children list", () => {
+    const result: CommandResult = {
+      stdout: "[]",
+      stderr: "",
+      exitCode: 0,
+    };
+
+    const parsed = parseChildrenOutput(result, "parent-1");
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toHaveLength(0);
+  });
+
+  test("returns error for non-zero exit code", () => {
+    const result: CommandResult = {
+      stdout: "",
+      stderr: "Parent not found",
+      exitCode: 1,
+    };
+
+    const parsed = parseChildrenOutput(result, "missing-parent");
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.message).toContain("missing-parent");
+  });
+});
+
+describe("buildCreateBeadArgs", () => {
+  test("builds minimal args with just title", () => {
+    const args = buildCreateBeadArgs("My Task");
+    expect(args).toEqual(["create", "My Task", "--silent"]);
+  });
+
+  test("includes parent option", () => {
+    const args = buildCreateBeadArgs("Subtask", { parent: "parent-1" });
+    expect(args).toContain("--parent");
+    expect(args).toContain("parent-1");
+  });
+
+  test("includes multiple labels", () => {
+    const args = buildCreateBeadArgs("Task", { labels: ["urgent", "bug"] });
+    expect(args.filter(a => a === "-l").length).toBe(2);
+    expect(args).toContain("urgent");
+    expect(args).toContain("bug");
+  });
+
+  test("includes notes option", () => {
+    const args = buildCreateBeadArgs("Task", { notes: "Important notes" });
+    expect(args).toContain("--notes");
+    expect(args).toContain("Important notes");
+  });
+
+  test("includes depends option", () => {
+    const args = buildCreateBeadArgs("Task", { depends: "dep-1" });
+    expect(args).toContain("--depends");
+    expect(args).toContain("dep-1");
+  });
+
+  test("includes all options", () => {
+    const args = buildCreateBeadArgs("Full Task", {
+      parent: "parent-1",
+      labels: ["task"],
+      notes: "Notes here",
+      depends: "dep-1",
+    });
+
+    expect(args).toContain("--parent");
+    expect(args).toContain("--notes");
+    expect(args).toContain("--depends");
+    expect(args).toContain("-l");
+    expect(args).toContain("--silent");
+  });
+});
+
+describe("calculateBeadsStatus", () => {
+  test("calculates correct counts", () => {
+    const beads: Bead[] = [
+      { id: "1", title: "Open task", status: "open" },
+      { id: "2", title: "In progress", status: "in_progress" },
+      { id: "3", title: "Closed", status: "closed" },
+      { id: "4", title: "Blocked", status: "blocked" },
+    ];
+
+    const status = calculateBeadsStatus(beads, "[]");
+    expect(status.total).toBe(4);
+    expect(status.open).toBe(2); // open + in_progress
+    expect(status.ready).toBeNull();
+  });
+
+  test("extracts ready task from JSON", () => {
+    const beads: Bead[] = [
+      { id: "1", title: "Task 1", status: "open" },
+    ];
+
+    const readyOutput = JSON.stringify([{ id: "1", title: "Ready Task" }]);
+    const status = calculateBeadsStatus(beads, readyOutput);
+    expect(status.ready).toBe("Ready Task");
+  });
+
+  test("uses id when title missing", () => {
+    const beads: Bead[] = [];
+    const readyOutput = JSON.stringify([{ id: "task-id" }]);
+    const status = calculateBeadsStatus(beads, readyOutput);
+    expect(status.ready).toBe("task-id");
+  });
+
+  test("handles invalid JSON gracefully", () => {
+    const beads: Bead[] = [];
+    const status = calculateBeadsStatus(beads, "invalid json");
+    expect(status.ready).toBeNull();
+  });
+
+  test("handles empty ready output", () => {
+    const beads: Bead[] = [];
+    const status = calculateBeadsStatus(beads, "");
+    expect(status.ready).toBeNull();
+  });
+
+  test("handles empty ready array", () => {
+    const beads: Bead[] = [];
+    const status = calculateBeadsStatus(beads, "[]");
+    expect(status.ready).toBeNull();
   });
 });
 

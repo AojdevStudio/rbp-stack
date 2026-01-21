@@ -27,31 +27,18 @@ export interface BeadsCliResult<T> {
   error?: RbpError;
 }
 
-async function runBeadsCommand(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const proc = Bun.spawn(["bd", ...args], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  const stdout = await new Response(proc.stdout).text();
-  const stderr = await new Response(proc.stderr).text();
-  const exitCode = await proc.exited;
-
-  return { stdout, stderr, exitCode };
+export interface CommandResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
 }
 
-export async function checkBeadsInstalled(): Promise<boolean> {
-  try {
-    const result = await runBeadsCommand(["--version"]);
-    return result.exitCode === 0;
-  } catch {
-    return false;
-  }
-}
-
-export async function getReadyBead(): Promise<BeadsCliResult<Bead | null>> {
-  const result = await runBeadsCommand(["ready", "--json", "-n", "1"]);
-
+/**
+ * Parse ready bead output from bd CLI
+ * @param result - Command result from bd ready --json
+ * @returns Parsed result with first ready bead or null
+ */
+export function parseReadyBeadOutput(result: CommandResult): BeadsCliResult<Bead | null> {
   if (result.exitCode !== 0) {
     if (result.stderr.includes("No open issues") || result.stdout.includes("No open issues")) {
       return { success: true, data: null };
@@ -80,13 +67,12 @@ export async function getReadyBead(): Promise<BeadsCliResult<Bead | null>> {
   }
 }
 
-export async function listBeads(options: { status?: string; all?: boolean } = {}): Promise<BeadsCliResult<Bead[]>> {
-  const args = ["list", "--json"];
-  if (options.status) args.push("--status", options.status);
-  if (options.all) args.push("--all");
-
-  const result = await runBeadsCommand(args);
-
+/**
+ * Parse list beads output from bd CLI
+ * @param result - Command result from bd list --json
+ * @returns Parsed result with list of beads
+ */
+export function parseListBeadsOutput(result: CommandResult): BeadsCliResult<Bead[]> {
   if (result.exitCode !== 0) {
     return {
       success: false,
@@ -110,9 +96,13 @@ export async function listBeads(options: { status?: string; all?: boolean } = {}
   }
 }
 
-export async function showBead(id: string): Promise<BeadsCliResult<Bead>> {
-  const result = await runBeadsCommand(["show", id, "--json"]);
-
+/**
+ * Parse show bead output from bd CLI
+ * @param result - Command result from bd show --json
+ * @param id - Bead ID for error context
+ * @returns Parsed result with single bead
+ */
+export function parseShowBeadOutput(result: CommandResult, id: string): BeadsCliResult<Bead> {
   if (result.exitCode !== 0) {
     return {
       success: false,
@@ -134,6 +124,137 @@ export async function showBead(id: string): Promise<BeadsCliResult<Bead>> {
       }),
     };
   }
+}
+
+/**
+ * Parse children beads output from bd CLI
+ * @param result - Command result from bd children --json
+ * @param parentId - Parent bead ID for error context
+ * @returns Parsed result with list of child beads
+ */
+export function parseChildrenOutput(result: CommandResult, parentId: string): BeadsCliResult<Bead[]> {
+  if (result.exitCode !== 0) {
+    return {
+      success: false,
+      error: createError(ErrorCodes.BEADS_COMMAND_FAILED, `bd children ${parentId} failed`, {
+        details: { stderr: result.stderr },
+      }),
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(result.stdout || "[]");
+    const beads = BeadListSchema.parse(Array.isArray(parsed) ? parsed : []);
+    return { success: true, data: beads };
+  } catch (e) {
+    return {
+      success: false,
+      error: createError(ErrorCodes.BEADS_PARSE_ERROR, "Failed to parse bd children output", {
+        details: { output: result.stdout, parseError: String(e) },
+      }),
+    };
+  }
+}
+
+/**
+ * Build arguments for create bead command
+ * @param title - Bead title
+ * @param options - Create options
+ * @returns Array of command arguments
+ */
+export function buildCreateBeadArgs(title: string, options: CreateBeadOptions = {}): string[] {
+  const args = ["create", title];
+
+  if (options.parent) {
+    args.push("--parent", options.parent);
+  }
+
+  if (options.labels) {
+    for (const label of options.labels) {
+      args.push("-l", label);
+    }
+  }
+
+  if (options.notes) {
+    args.push("--notes", options.notes);
+  }
+
+  if (options.depends) {
+    args.push("--depends", options.depends);
+  }
+
+  args.push("--silent");
+  return args;
+}
+
+/**
+ * Calculate beads status summary from list and ready results
+ * @param listOutput - Parsed list of all beads
+ * @param readyOutput - Stdout from bd ready command
+ * @returns Status summary with open count, total count, and ready task
+ */
+export function calculateBeadsStatus(
+  listOutput: Bead[],
+  readyOutput: string
+): { open: number; total: number; ready: string | null } {
+  const openBeads = listOutput.filter((b) => b.status === "open" || b.status === "in_progress");
+
+  let ready: string | null = null;
+  try {
+    const readyBeads = JSON.parse(readyOutput || "[]");
+    if (Array.isArray(readyBeads) && readyBeads.length > 0) {
+      ready = readyBeads[0].title || readyBeads[0].id;
+    }
+  } catch {
+    // Ignore parse errors for ready
+  }
+
+  return {
+    open: openBeads.length,
+    total: listOutput.length,
+    ready,
+  };
+}
+
+async function runBeadsCommand(args: string[]): Promise<CommandResult> {
+  const proc = Bun.spawn(["bd", ...args], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const stdout = await new Response(proc.stdout).text();
+  const stderr = await new Response(proc.stderr).text();
+  const exitCode = await proc.exited;
+
+  return { stdout, stderr, exitCode };
+}
+
+export async function checkBeadsInstalled(): Promise<boolean> {
+  try {
+    const result = await runBeadsCommand(["--version"]);
+    return result.exitCode === 0;
+  } catch {
+    return false;
+  }
+}
+
+export async function getReadyBead(): Promise<BeadsCliResult<Bead | null>> {
+  const result = await runBeadsCommand(["ready", "--json", "-n", "1"]);
+  return parseReadyBeadOutput(result);
+}
+
+export async function listBeads(options: { status?: string; all?: boolean } = {}): Promise<BeadsCliResult<Bead[]>> {
+  const args = ["list", "--json"];
+  if (options.status) args.push("--status", options.status);
+  if (options.all) args.push("--all");
+
+  const result = await runBeadsCommand(args);
+  return parseListBeadsOutput(result);
+}
+
+export async function showBead(id: string): Promise<BeadsCliResult<Bead>> {
+  const result = await runBeadsCommand(["show", id, "--json"]);
+  return parseShowBeadOutput(result, id);
 }
 
 export async function updateBeadStatus(id: string, status: "open" | "in_progress" | "blocked" | "deferred" | "closed"): Promise<BeadsCliResult<void>> {
@@ -208,28 +329,7 @@ export interface CreateBeadOptions {
  * Returns the bead ID on success
  */
 export async function createBead(title: string, options: CreateBeadOptions = {}): Promise<BeadsCliResult<string>> {
-  const args = ["create", title];
-
-  if (options.parent) {
-    args.push("--parent", options.parent);
-  }
-
-  if (options.labels) {
-    for (const label of options.labels) {
-      args.push("-l", label);
-    }
-  }
-
-  if (options.notes) {
-    args.push("--notes", options.notes);
-  }
-
-  if (options.depends) {
-    args.push("--depends", options.depends);
-  }
-
-  args.push("--silent");
-
+  const args = buildCreateBeadArgs(title, options);
   const result = await runBeadsCommand(args);
 
   if (result.exitCode !== 0) {
@@ -266,12 +366,7 @@ export async function getBeadChildren(parentId: string): Promise<BeadsCliResult<
     // Some versions might not support children command, try list with parent filter
     const listResult = await runBeadsCommand(["list", "--json"]);
     if (listResult.exitCode !== 0) {
-      return {
-        success: false,
-        error: createError(ErrorCodes.BEADS_COMMAND_FAILED, `bd children ${parentId} failed`, {
-          details: { stderr: result.stderr },
-        }),
-      };
+      return parseChildrenOutput(result, parentId);
     }
 
     // Filter manually by checking if we can
@@ -285,18 +380,7 @@ export async function getBeadChildren(parentId: string): Promise<BeadsCliResult<
     }
   }
 
-  try {
-    const parsed = JSON.parse(result.stdout || "[]");
-    const beads = BeadListSchema.parse(Array.isArray(parsed) ? parsed : []);
-    return { success: true, data: beads };
-  } catch (e) {
-    return {
-      success: false,
-      error: createError(ErrorCodes.BEADS_PARSE_ERROR, "Failed to parse bd children output", {
-        details: { output: result.stdout, parseError: String(e) },
-      }),
-    };
-  }
+  return parseChildrenOutput(result, parentId);
 }
 
 /**
@@ -316,28 +400,12 @@ export async function getBeadsStatus(): Promise<BeadsCliResult<{ open: number; t
       };
     }
 
-    const allBeads = JSON.parse(listResult.stdout || "[]");
-    const openBeads = allBeads.filter((b: Bead) => b.status === "open" || b.status === "in_progress");
-
-    let ready: string | null = null;
-    if (readyResult.exitCode === 0) {
-      try {
-        const readyBeads = JSON.parse(readyResult.stdout || "[]");
-        if (Array.isArray(readyBeads) && readyBeads.length > 0) {
-          ready = readyBeads[0].title || readyBeads[0].id;
-        }
-      } catch {
-        // Ignore parse errors for ready
-      }
-    }
+    const allBeads = BeadListSchema.parse(JSON.parse(listResult.stdout || "[]"));
+    const statusData = calculateBeadsStatus(allBeads, readyResult.stdout);
 
     return {
       success: true,
-      data: {
-        open: openBeads.length,
-        total: allBeads.length,
-        ready,
-      },
+      data: statusData,
     };
   } catch (e) {
     return {
