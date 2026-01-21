@@ -104,7 +104,14 @@ export async function runBeadsWorkflow(options: BeadsWorkflowOptions): Promise<B
       }
     }
 
-    await updateBeadStatus(task.id, "in_progress");
+    const statusResult = await updateBeadStatus(task.id, "in_progress");
+    if (!statusResult.success) {
+      logger.error(`Failed to update task status: ${statusResult.error?.message}`);
+      emitTaskFailed(task.id, task.title, statusResult.error?.message ?? "Failed to update status");
+      tasksFailed++;
+      emitIterationEnd(iteration, "failure", task.id);
+      continue;
+    }
 
     try {
       if (onTaskReady) {
@@ -127,8 +134,15 @@ export async function runBeadsWorkflow(options: BeadsWorkflowOptions): Promise<B
             previousError: testResult.output.slice(0, 500),
           });
 
-          await addBeadNote(task.id, `Test failure (attempt ${(failureContext?.attempt ?? 0) + 1}):\n${testResult.output.slice(0, 200)}`);
-          await updateBeadStatus(task.id, "open");
+          const noteResult = await addBeadNote(task.id, `Test failure (attempt ${(failureContext?.attempt ?? 0) + 1}):\n${testResult.output.slice(0, 200)}`);
+          if (!noteResult.success) {
+            logger.warn(`Failed to add note to task: ${noteResult.error?.message}`);
+          }
+
+          const revertResult = await updateBeadStatus(task.id, "open");
+          if (!revertResult.success) {
+            logger.error(`Failed to revert task status: ${revertResult.error?.message}`);
+          }
 
           tasksFailed++;
           emitIterationEnd(iteration, "failure", task.id);
@@ -140,7 +154,15 @@ export async function runBeadsWorkflow(options: BeadsWorkflowOptions): Promise<B
         logger.success("Tests passed!");
       }
 
-      await closeBead(task.id);
+      const closeResult = await closeBead(task.id);
+      if (!closeResult.success) {
+        logger.error(`Failed to close task: ${closeResult.error?.message}`);
+        emitTaskFailed(task.id, task.title, closeResult.error?.message ?? "Failed to close task");
+        tasksFailed++;
+        emitIterationEnd(iteration, "failure", task.id);
+        continue;
+      }
+
       emitTaskComplete(task.id, task.title);
       failureContexts.delete(task.id);
       tasksCompleted++;
@@ -158,7 +180,10 @@ export async function runBeadsWorkflow(options: BeadsWorkflowOptions): Promise<B
         previousError: errorMsg,
       });
 
-      await updateBeadStatus(task.id, "open");
+      const revertOnErrorResult = await updateBeadStatus(task.id, "open");
+      if (!revertOnErrorResult.success) {
+        logger.error(`Failed to revert task status after error: ${revertOnErrorResult.error?.message}`);
+      }
       tasksFailed++;
       emitIterationEnd(iteration, "failure", task.id);
     }
