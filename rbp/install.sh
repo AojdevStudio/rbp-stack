@@ -144,7 +144,7 @@ install_scripts() {
   cp "$SCRIPT_DIR/lib/dist/index.js" "$TARGET_DIR/scripts/rbp/lib/dist/"
 
   # Copy prompt template
-  cp "$SCRIPT_DIR/scripts/prompt.md" "$TARGET_DIR/scripts/rbp/"
+  cp "$SCRIPT_DIR/scripts/promptv3.md" "$TARGET_DIR/scripts/rbp/"
 
   # Make wrapper executable
   chmod +x "$TARGET_DIR/scripts/rbp/"*.sh
@@ -176,17 +176,51 @@ install_commands() {
   echo ""
 }
 
-# Step 5: Setup hooks in settings.json
+# Step 5: Install skills
+install_skills() {
+  print_step "Installing skills to $TARGET_DIR/.claude/skills/rbp/..."
+
+  local skills_src="$SCRIPT_DIR/templates/skills"
+  local skills_dst="$TARGET_DIR/.claude/skills/rbp"
+
+  if [ -d "$skills_src" ] && [ "$(ls -A "$skills_src" 2>/dev/null)" ]; then
+    mkdir -p "$skills_dst"
+    # Copy skill directories (each skill is a directory with SKILL.md inside)
+    for skill_dir in "$skills_src"/*/; do
+      if [ -d "$skill_dir" ]; then
+        cp -r "$skill_dir" "$skills_dst/"
+      fi
+    done
+    print_success "Skills installed"
+  else
+    echo -e "  ${YELLOW}No bundled skills found (optional)${NC}"
+  fi
+
+  echo ""
+}
+
+# Step 6: Setup hooks and settings
 install_hooks() {
-  print_step "Configuring Claude Code hooks..."
+  print_step "Configuring Claude Code hooks and settings..."
 
   local settings_file="$TARGET_DIR/.claude/settings.json"
+  local hooks_src="$SCRIPT_DIR/templates/hooks"
+  local hooks_dst="$TARGET_DIR/.claude/hooks"
+
   mkdir -p "$TARGET_DIR/.claude"
 
+  # Copy hook files if they exist
+  if [ -d "$hooks_src" ] && [ "$(ls -A "$hooks_src" 2>/dev/null)" ]; then
+    mkdir -p "$hooks_dst"
+    cp "$hooks_src"/*.ts "$hooks_dst/" 2>/dev/null || true
+    print_success "Hook files installed to .claude/hooks/"
+  fi
+
+  # Handle settings.json
   if [ -f "$settings_file" ]; then
-    # Check if hooks already configured
-    if grep -q "show-active-task" "$settings_file" 2>/dev/null; then
-      print_success "Hooks already configured"
+    # Check if already using RBP isolation settings
+    if grep -q "project-only" "$settings_file" 2>/dev/null; then
+      print_success "RBP isolation settings already configured"
       echo ""
       return
     fi
@@ -195,23 +229,22 @@ install_hooks() {
     cp "$settings_file" "$settings_file.bak"
     print_success "Backed up existing settings.json"
 
-    echo -e "${YELLOW}  Note: Manual hook configuration may be needed.${NC}"
-    echo -e "${YELLOW}  See templates/settings.json for hook configuration.${NC}"
+    echo -e "${YELLOW}  Note: Existing settings backed up. Review for manual merge if needed.${NC}"
+  fi
+
+  # Create/overwrite settings.json from template (isolation mode)
+  if [ -f "$SCRIPT_DIR/templates/settings.json" ]; then
+    cp "$SCRIPT_DIR/templates/settings.json" "$settings_file"
+    print_success "Created settings.json with RBP isolation mode"
   else
-    # Create new settings.json from template
-    if [ -f "$SCRIPT_DIR/templates/settings.json" ]; then
-      cp "$SCRIPT_DIR/templates/settings.json" "$settings_file"
-      print_success "Created settings.json with RBP hooks"
-    else
-      echo '{}' > "$settings_file"
-      echo -e "${YELLOW}  Created empty settings.json - configure hooks manually${NC}"
-    fi
+    echo '{}' > "$settings_file"
+    echo -e "${YELLOW}  Created empty settings.json - configure manually${NC}"
   fi
 
   echo ""
 }
 
-# Step 6: Initialize beads if needed
+# Step 7: Initialize beads if needed
 init_beads() {
   print_step "Checking beads initialization..."
 
@@ -232,7 +265,7 @@ init_beads() {
   echo ""
 }
 
-# Step 7: Create config if not exists
+# Step 8: Create config if not exists
 create_config() {
   print_step "Setting up configuration..."
 
@@ -253,7 +286,7 @@ create_config() {
   echo ""
 }
 
-# Step 8: Copy validator
+# Step 9: Copy validator
 copy_validator() {
   print_step "Installing validator..."
 
@@ -272,27 +305,46 @@ print_summary() {
   echo ""
   echo "Installed to: $TARGET_DIR"
   echo ""
+  echo -e "${CYAN}Isolation Mode: project-only (global PAI hooks disabled)${NC}"
+  echo "  - Skills: scoped to .claude/skills/rbp/"
+  echo "  - Hooks: scoped to .claude/hooks/"
+  echo "  - Settings: scoped to .claude/settings.json"
+  echo ""
+
+  # Check if skills were installed
+  if [ -d "$TARGET_DIR/.claude/skills/rbp" ] && [ "$(ls -A "$TARGET_DIR/.claude/skills/rbp" 2>/dev/null)" ]; then
+    echo -e "${GREEN}Bundled skills installed to .claude/skills/rbp/${NC}"
+    echo ""
+  fi
+
   echo "Next steps:"
   echo "  1. Review configuration: $TARGET_DIR/rbp-config.yaml"
-  echo "  2. Run validation: $TARGET_DIR/scripts/rbp/validate.sh"
+  echo "  2. Run validation: /rbp:validate (in Claude Code)"
   echo ""
-  echo "Start autonomous execution:"
+  echo -e "${GREEN}Start autonomous execution (CLI only):${NC}"
   echo "  ./scripts/rbp/ralph.sh start"
   echo ""
-  echo "  That's it. One command. It will:"
+  echo "  This will:"
   echo "    - Detect project type (BMAD or Quick-plan)"
   echo "    - Auto-create stories from epics (headless)"
   echo "    - Parse to beads tasks"
   echo "    - Run execution loop until complete"
   echo ""
-  echo "  CLI Commands:"
+  echo -e "${YELLOW}Ralph CLI Commands:${NC}"
+  echo "    bun ./scripts/rbp/lib/dist/index.js run            # Run execution loop"
+  echo "    bun ./scripts/rbp/lib/dist/index.js status         # Show progress"
+  echo "    bun ./scripts/rbp/lib/dist/index.js close <id>     # Close task with tests"
+  echo "    bun ./scripts/rbp/lib/dist/index.js exec-spec <f>  # Execute spec file"
+  echo ""
+  echo "    Or use the wrapper script:"
   echo "    ./scripts/rbp/ralph.sh start          # Auto-detect and run"
-  echo "    ./scripts/rbp/ralph.sh run            # Run execution loop"
+  echo "    ./scripts/rbp/ralph.sh run --beads    # Run beads workflow"
+  echo "    ./scripts/rbp/ralph.sh run --bmad     # Run BMAD workflow"
   echo "    ./scripts/rbp/ralph.sh status         # Show progress"
-  echo "    ./scripts/rbp/ralph.sh parse-spec     # Parse spec to beads"
-  echo "    ./scripts/rbp/ralph.sh parse-story    # Parse story to beads"
-  echo "    ./scripts/rbp/ralph.sh generate-story # Create BMAD story"
-  echo "    ./scripts/rbp/ralph.sh hooks          # Run session hooks"
+  echo ""
+  echo -e "${YELLOW}Slash Commands (read-only, use in Claude Code):${NC}"
+  echo "    /rbp:status      Show progress and task state"
+  echo "    /rbp:validate    Validate installation"
   echo ""
   echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}"
 }
@@ -308,6 +360,7 @@ main() {
   build_typescript
   install_scripts
   install_commands
+  install_skills
   install_hooks
   init_beads
   create_config
@@ -320,10 +373,13 @@ case "${1:-}" in
   --help|-h)
     echo "RBP Stack Installer"
     echo ""
-    echo "Usage: ./install.sh [target-directory]"
+    echo "Usage: ./install.sh [target-directory] [options]"
     echo ""
     echo "Arguments:"
     echo "  target-directory  Directory to install RBP Stack (default: current directory)"
+    echo ""
+    echo "Options:"
+    echo "  --with-pai        Enable PAI integration (future feature)"
     echo ""
     echo "This installer will:"
     echo "  - Check prerequisites (bd, bun, claude)"
@@ -333,6 +389,11 @@ case "${1:-}" in
     echo "  - Initialize beads if needed"
     echo "  - Create rbp-config.yaml"
     exit 0
+    ;;
+  --with-pai)
+    echo -e "${YELLOW}Note: --with-pai is reserved for future PAI integration${NC}"
+    shift
+    main
     ;;
   *)
     main

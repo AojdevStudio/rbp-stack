@@ -106,10 +106,18 @@ else
   fi
 fi
 
-if [ -d "$PROJECT_ROOT/.claude/commands/rbp" ]; then
-  check_pass ".claude/commands/rbp/ exists"
+if [ "$SOURCE_MODE" = true ]; then
+  if [ -d "$PROJECT_ROOT/commands/rbp" ]; then
+    check_pass "commands/rbp/ exists (source mode)"
+  else
+    check_fail "commands/rbp/ missing"
+  fi
 else
-  check_fail ".claude/commands/rbp/ missing"
+  if [ -d "$PROJECT_ROOT/.claude/commands/rbp" ]; then
+    check_pass ".claude/commands/rbp/ exists"
+  else
+    check_fail ".claude/commands/rbp/ missing"
+  fi
 fi
 
 if [ -d "$PROJECT_ROOT/.beads" ]; then
@@ -131,16 +139,16 @@ if [ "$SOURCE_MODE" = true ]; then
     check_fail "ralph.sh missing"
   fi
 
-  if [ -f "$PROJECT_ROOT/scripts/prompt.md" ]; then
-    check_pass "scripts/prompt.md"
+  if [ -f "$PROJECT_ROOT/scripts/promptv3.md" ]; then
+    check_pass "scripts/promptv3.md"
   else
-    check_fail "scripts/prompt.md missing"
+    check_fail "scripts/promptv3.md missing"
   fi
 else
   # Installed mode
   REQUIRED_SCRIPTS=(
     "ralph.sh"
-    "prompt.md"
+    "promptv3.md"
   )
 
   for script in "${REQUIRED_SCRIPTS[@]}"; do
@@ -182,13 +190,18 @@ echo ""
 echo -e "${YELLOW}Slash Commands:${NC}"
 
 REQUIRED_COMMANDS=(
-  "start.md"
   "status.md"
   "validate.md"
 )
 
+if [ "$SOURCE_MODE" = true ]; then
+  COMMANDS_DIR="$PROJECT_ROOT/commands/rbp"
+else
+  COMMANDS_DIR="$PROJECT_ROOT/.claude/commands/rbp"
+fi
+
 for cmd in "${REQUIRED_COMMANDS[@]}"; do
-  if [ -f "$PROJECT_ROOT/.claude/commands/rbp/$cmd" ]; then
+  if [ -f "$COMMANDS_DIR/$cmd" ]; then
     check_pass "$cmd"
   else
     check_fail "$cmd missing"
@@ -251,26 +264,16 @@ if [ $FAIL_COUNT -eq 0 ]; then
     echo -e "$PASS_COUNT passed, $WARN_COUNT warnings"
   fi
   echo ""
-  echo "You can now use either workflow:"
+  echo "Start autonomous execution (CLI only):"
   echo ""
-  echo "  Workflow A - BMAD Stories:"
-  echo "    1. Create stories: ./scripts/rbp/ralph.sh generate-story"
-  echo "    2. Convert: ./scripts/rbp/ralph.sh parse-story <story.md>"
-  echo "    3. Execute: ./scripts/rbp/ralph.sh run"
+  echo "  ./scripts/rbp/ralph.sh start          # Auto-detect and run"
+  echo "  ./scripts/rbp/ralph.sh run --beads    # Run beads workflow"
+  echo "  ./scripts/rbp/ralph.sh status         # Show progress"
   echo ""
-  echo "  Workflow B - Quick-Plan Specs:"
-  echo "    1. Create spec: /quick-plan \"feature description\""
-  echo "    2. Execute: ./scripts/rbp/ralph.sh exec-spec specs/<spec>.md"
+  echo "Slash commands (read-only, use in Claude Code):"
   echo ""
-  echo "  Or auto-detect:"
-  echo "    ./scripts/rbp/ralph.sh start        # Detects workflow and runs"
-  echo ""
-  echo "  CLI Commands:"
-  echo "    ./scripts/rbp/ralph.sh start        # Auto-detect and run"
-  echo "    ./scripts/rbp/ralph.sh run          # Run execution loop"
-  echo "    ./scripts/rbp/ralph.sh status       # Show status"
-  echo "    ./scripts/rbp/ralph.sh close <id>   # Close task (test-gated)"
-  echo "    ./scripts/rbp/ralph.sh hooks        # Run session hooks manually"
+  echo "  /rbp:status       Show progress and task state"
+  echo "  /rbp:validate     Validate installation"
 else
   echo -e "${RED}RBP Stack: NOT READY${NC}"
   echo -e "$PASS_COUNT passed, ${RED}$FAIL_COUNT failed${NC}, $WARN_COUNT warnings"

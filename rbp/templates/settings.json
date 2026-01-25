@@ -1,4 +1,10 @@
 {
+  "_comment": "RBP Stack - Project-Only Isolation Mode",
+  "_isolation": {
+    "mode": "project-only",
+    "description": "This project uses isolated settings. Global ~/.claude hooks, commands, and skills are not used.",
+    "opt_in_pai": false
+  },
   "hooks": {
     "SessionStart": [
       {
@@ -7,21 +13,6 @@
           {
             "type": "command",
             "command": "bd prime 2>/dev/null || true"
-          },
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/rbp/show-active-task.sh"
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/rbp/save-progress-to-beads.sh"
           }
         ]
       }
@@ -31,7 +22,15 @@
     "allow": [
       "Bash(bd:*)",
       "Bash(bun:*)",
-      "Bash(scripts/rbp/*)"
+      "Bash(ralph:*)",
+      "Bash(scripts/rbp/*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)"
     ]
-  }
+  },
+  "includeColocatedProjects": false
 }
