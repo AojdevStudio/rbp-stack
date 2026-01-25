@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/rbp-hero-banner.jpg" alt="RBP Stack - Stop trusting. Start verifying." width="800"/>
+<img src="docs/images/rbp-hero-banner.jpg" alt="RBP Stack - Stop trusting. Start verifying." width="800"/>
 
 # RBP Stack
 
@@ -122,7 +122,7 @@ Both workflows use the same gatekeeper:
 
 <div align="center">
 
-<img src="docs/rbp-2-workflow-flow.jpg" alt="RBP Workflow" width="700"/>
+<img src="docs/images/rbp-2-workflow-flow.jpg" alt="RBP Workflow" width="700"/>
 
 *From requirements to verified code. No human intervention required.*
 
@@ -172,7 +172,7 @@ We don't trust agents. We verify them at every layer.
 
 <div align="center">
 
-<img src="docs/rbp-3-verification-system.jpg" alt="Verification System" width="600"/>
+<img src="docs/images/rbp-3-verification-system.jpg" alt="Verification System" width="600"/>
 
 </div>
 
@@ -344,7 +344,7 @@ ralph exec-spec <file> --dry-run       # Dry run mode
 
 <div align="center">
 
-<img src="docs/rbp-1-layer-architecture.jpg" alt="Architecture" width="700"/>
+<img src="docs/images/rbp-1-layer-architecture.jpg" alt="Architecture" width="700"/>
 
 </div>
 
