@@ -446,7 +446,7 @@ Validate RBP installation.
 
 **Checks**:
 - Prerequisites: `bd`, `bun`, `claude`
-- Directory structure: `scripts/rbp/lib/dist/`, `.claude/commands/rbp/`, `.beads/`
+- Directory structure: `lib/dist/`, `commands/rbp/`, `.beads/`
 - Configuration: `rbp-config.yaml`
 
 ---
@@ -459,26 +459,25 @@ project/
 │   ├── issues.jsonl          # Source of truth (git-tracked)
 │   └── config.yaml           # Beads configuration
 │
-├── .claude/
-│   └── commands/
-│       └── rbp/
-│           ├── start.md      # /rbp:start command
-│           ├── status.md     # /rbp:status command
-│           └── validate.md   # /rbp:validate command
+├── commands/
+│   └── rbp/
+│       ├── start.md          # /rbp:start command
+│       ├── status.md         # /rbp:status command
+│       └── validate.md       # /rbp:validate command
+│
+├── lib/                      # TypeScript CLI
+│   ├── src/
+│   │   ├── cli.ts
+│   │   ├── commands/
+│   │   ├── workflows/
+│   │   └── integrations/
+│   └── dist/
+│       └── index.js
 │
 ├── scripts/
-│   └── rbp/
-│       ├── lib/              # TypeScript CLI
-│       │   ├── src/
-│       │   │   ├── cli.ts
-│       │   │   ├── commands/
-│       │   │   ├── workflows/
-│       │   │   └── integrations/
-│       │   └── dist/
-│       │       └── index.js
-│       ├── promptv3.md       # Execution protocol
-│       ├── progress.txt      # Append-only learnings
-│       └── ralph.sh          # Bash wrapper (optional)
+│   ├── promptv3.md           # Execution protocol
+│   ├── progress.txt          # Append-only learnings
+│   └── ralph.sh              # Bash wrapper (optional)
 │
 ├── docs/
 │   ├── bmm/implementation-artifacts/  # BMAD artifacts
@@ -699,7 +698,7 @@ describe("CLI validation", () => {
 - **XML task injection** via `buildTaskXml()`
 - **`<rbp:complete/>` signal**
 - **`/rbp:*` slash commands**
-- **`scripts/rbp/` directory**
+- **`scripts/` directory**
 - **Direct Beads queries** via `bd ready --json`
 - **No decomposition** - tasks managed in Beads
 
@@ -735,7 +734,7 @@ If you have old RBP v1.0 installations:
 5. **Migrate tasks**:
    - Convert existing stories to Beads:
      ```bash
-     scripts/rbp/parse-story-to-beads.sh docs/stories/story-*.md
+     scripts/parse-story-to-beads.sh docs/stories/story-*.md
      ```
 
 ---

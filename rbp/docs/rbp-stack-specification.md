@@ -92,8 +92,9 @@ Long-running tasks exhaust context windows, causing:
                               │ queried by (bd ready)
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│              RALPH LOOP (scripts/rbp/)                       │
-│     Claude Code execution until bd ready returns nothing     │
+│         RALPH CLI (TypeScript + Commander.js)                │
+│     bun lib/src/cli.ts run - Primary execution engine        │
+│     ralph.sh - Wrapper script for convenience                │
 │        Execution Sequencer groups subtasks into phases       │
 │        Failure State Injection: Previous notes → Context     │
 └─────────────────────────────────────────────────────────────┘
@@ -220,13 +221,68 @@ bd-a1b2 (Story: "4-2-admin-dashboard")
   "status": "open",
   "priority": 2,
   "parent": "bd-a1b2",
+  "parent_id": "bd-a1b2",
   "story_ref": "docs/bmm/implementation-artifacts/stories/story-4-2-admin-dashboard.md",
-  "acceptance_criteria": ["AC1", "AC5", "AC6"],
+  "description": "Create the main admin layout component with sidebar and content area",
+  "acceptance_criteria": ["AC1: Sidebar renders with 256px width", "AC5: Layout is responsive", "AC6: Content area fills remaining space"],
+  "estimated_size": "medium",
   "subtasks": ["bd-a1b2.2.1", "bd-a1b2.2.2"],
   "requires_playwright": true,
   "dependencies": ["bd-a1b2.1.2"],
   "notes": "FAILED: 2026-01-19 14:32:15\ntypecheck: PASS\nbun test: FAIL (exit code 1)\nplaywright: SKIPPED"
 }
+```
+
+**New fields for RBP Task Injection:**
+- **description**: Task details (string, optional) - used if provided, falls back to notes
+- **acceptance_criteria**: Array of acceptance criteria strings (array, optional) - injected into XML
+- **estimated_size**: Task complexity estimate - "small", "medium", or "needs-decomposition" (enum, optional, defaults to "medium")
+- **parent_id**: Reference to parent bead ID (string, optional) - enables hierarchy context in task injection
+
+---
+
+## Task Injection and XML Contract
+
+### XML Task Injection (Ralph buildTaskXml)
+
+When Ralph queries a ready task via `bd ready`, it constructs an XML block matching the promptv3 InjectionContract:
+
+```typescript
+export function buildTaskXml(task: Bead): string {
+  const escapeCdata = (s: string) => s.replace(/]]>/g, "]]]]><![CDATA[>");
+
+  const description = task.description || task.notes || "No description provided";
+  const criteria = task.acceptance_criteria || [];
+  const size = task.estimated_size || "medium";
+
+  // Builds XML with CDATA-escaped content
+  return `
+  <CurrentTask>
+    <BeadId><![CDATA[${escapeCdata(task.id)}]]></BeadId>
+    <Title><![CDATA[${escapeCdata(task.title)}]]></Title>
+    <Description><![CDATA[${escapeCdata(description)}]]></Description>
+    <AcceptanceCriteria>
+${criteria.map(c => `      <Criterion><![CDATA[${escapeCdata(c)}]]></Criterion>`).join("\n")}
+    </AcceptanceCriteria>
+    <EstimatedSize>${size}</EstimatedSize>
+    ${task.parent_id ? `<ParentId><![CDATA[${escapeCdata(task.parent_id)}]]></ParentId>` : ""}
+  </CurrentTask>
+`;
+}
+```
+
+This XML is appended directly to the promptv3.md prompt content, enabling Claude to receive structured task context without string interpolation issues.
+
+### Injection Flow
+
+```
+bd ready --json
+    ↓ (returns Bead object)
+buildTaskXml(task)
+    ↓ (constructs XML block)
+promptv3.md + XML appended
+    ↓ (passed to Claude stdin)
+Claude receives complete prompt with injected task
 ```
 
 ---
@@ -384,64 +440,70 @@ done
 
 ```
 Layer 1: Objective Acceptance Criteria
-  └─ Every task auto-includes: "bun run test passes"
+  └─ Every task auto-includes: "bun test passes"
 
-Layer 2: Protocol Mandate
+Layer 2: Protocol Mandate (promptv3.md)
   └─ Worker instructions require: Implement → Test → Verify → Close
 
 Layer 3: Failure State Injection
   └─ Previous attempt notes injected for retry context
   └─ Agent cannot claim "unknown error" on retry
 
-Layer 4: Test Gating (CRITICAL)
-  └─ bd close REQUIRES test output as proof
-  └─ No checkbox marking - only bd close counts
+Layer 4: Test Gating (CRITICAL - TypeScript CLI)
+  └─ ralph close REQUIRES test output as proof
+  └─ Implemented in lib/src/commands/close.ts
+  └─ No checkbox marking - only ralph close counts
 
 Layer 5: Playwright Gating (UI stories)
   └─ UI acceptance criteria require: "playwright test passes"
   └─ Visual verification, not just unit tests
+  └─ Configured via config.verification.require_playwright_for_ui
 
-Layer 6: Code Review
+Layer 6: Code Review (Optional - Codex)
   └─ Separate adversarial agent validates all ACs
+  └─ Enabled via config.codex.enabled
 
 Layer 7: Audit Trail
   └─ All state changes in git-versioned issues.jsonl
 ```
 
-### Test-Gated Closure
+### Test-Gated Closure (TypeScript Implementation)
 
-```bash
-#!/usr/bin/env bash
-# scripts/rbp/close-with-proof.sh
+The `ralph close` command (lib/src/commands/close.ts) implements test-gated closure:
 
-BEAD_ID=$1
+```typescript
+export async function closeCommand(beadId: string, options: CloseOptions): Promise<void> {
+  const config = getConfig(globalOptions);
+  const projectRoot = findProjectRoot();
 
-# Get bead info
-BEAD_JSON=$(bd show "$BEAD_ID" --json)
-REQUIRES_PLAYWRIGHT=$(echo "$BEAD_JSON" | jq -r '.requires_playwright // false')
+  // Fetch bead info
+  const bead = await getBeadInfo(beadId);
 
-# Run unit/integration tests
-echo "Running bun test..."
-if ! bun run test 2>&1 | tee /tmp/test-output.txt; then
-  echo "FAILED: Tests did not pass. Bead remains open."
-  # Append failure notes for next iteration
-  FAILURE_NOTE="FAILED: $(date)\n$(cat /tmp/test-output.txt)"
-  bd update "$BEAD_ID" --note "$(echo -e "$FAILURE_NOTE")" 2>/dev/null || true
-  exit 1
-fi
+  if (!options.force && config.verification.require_tests) {
+    // Run tests
+    const testResult = await runTests(config.verification.test_command, projectRoot);
 
-# Run Playwright if required
-if [ "$REQUIRES_PLAYWRIGHT" = "true" ]; then
-  echo "Running Playwright verification..."
-  if ! bunx playwright test --reporter=line 2>&1 | tee /tmp/playwright-output.txt; then
-    echo "FAILED: Playwright tests did not pass. Bead remains open."
-    exit 1
-  fi
-fi
+    if (!testResult.passed) {
+      // Append failure notes
+      await appendBeadNotes(beadId, `FAILED: ${new Date().toISOString()}\n${testResult.output}`);
+      exitWithError(createError(ErrorCodes.TEST_FAILURE, "Tests failed", {
+        suggestion: "Fix failing tests before closing the bead"
+      }));
+    }
 
-# Close with proof
-bd close "$BEAD_ID" --reason "Verified: $(tail -5 /tmp/test-output.txt)"
-echo "CLOSED: $BEAD_ID"
+    // Run Playwright if required
+    if (bead.requires_playwright && config.verification.require_playwright_for_ui) {
+      const playwrightResult = await runTests(config.verification.playwright_command, projectRoot);
+      if (!playwrightResult.passed) {
+        exitWithError(createError(ErrorCodes.TEST_FAILURE, "Playwright tests failed"));
+      }
+    }
+  }
+
+  // Close with proof
+  await closeBead(beadId, `Verified: ${testResult.output.slice(-200)}`);
+  logger.success(`Closed: ${beadId}`);
+}
 ```
 
 ### Playwright Integration
@@ -469,96 +531,197 @@ test('AC4: Sidebar collapses with 200ms animation', async ({ page }) => {
 
 ---
 
-## Ralph Loop Implementation
+## Ralph CLI Implementation
 
-### ralph.sh (Claude Code Version)
+### TypeScript CLI (Primary Execution Engine)
 
-The Ralph execution loop implements:
+The Ralph CLI is written in TypeScript using Commander.js and runs on bun. The CLI implements:
 
-1. **Query Beads** for next ready task
-2. **Inject failure context** if task was previously attempted
-3. **Execute via Claude Code**
-4. **Check for completion signals** (`<rbp:complete/>` or `<rbp:error>`)
-5. **Loop until all tasks closed**
+1. **Query Beads** for next ready task via `bd ready --json`
+2. **Build task XML** via `buildTaskXml()` matching InjectionContract (lib/src/commands/run.ts)
+3. **Append XML to promptv3.md** for context injection
+4. **Execute via Claude Code** subprocess
+5. **Check for completion signals** (`<rbp:complete/>` or `<rbp:error>`)
+6. **Loop until all tasks closed** or max iterations reached
 
-Key features (lines 217-237 of ralph.sh):
+Key implementation (lib/src/commands/run.ts, lines 118-172):
 
-```bash
-# Fetch previous notes for failure state injection
-local previous_notes=""
-if command -v jq &>/dev/null && [ -n "$task_id" ] && [ "$task_id" != "unknown" ]; then
-  cd "$PROJECT_ROOT"
-  previous_notes=$(bd show "$task_id" --json 2>/dev/null | jq -r '.notes // empty' || echo "")
-fi
+```typescript
+if (workflow === "beads") {
+  const result = await runBeadsWorkflow({
+    config,
+    maxIterations,
+    dryRun: options.dryRun,
+    onTaskReady: async (task) => {
+      // Spawn Claude subprocess
+      const proc = Bun.spawn(
+        ["claude", "--dangerously-skip-permissions"],
+        { stdin: "pipe", stdout: "pipe", stderr: "pipe", cwd: projectRoot }
+      );
 
-# Inject failure context if previous notes exist
-local failure_context=""
-if [ -n "$previous_notes" ]; then
-  failure_context="
+      // Read promptv3.md and build task XML
+      const promptContent = readFileSync(promptPath, "utf-8");
+      const taskXml = buildTaskXml(task);
+      const prompt = `${promptContent}\n\n<!-- Task injected by Ralph -->\n${taskXml}`;
 
-## Previous Attempt Failed
+      // Inject prompt and execute
+      proc.stdin?.write(new TextEncoder().encode(prompt));
+      proc.stdin?.end();
 
-The last attempt encountered these issues:
+      // Capture output
+      const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
 
-$previous_notes
-
-Fix the issues above before proceeding.
-"
-fi
+      console.log(stdout);
+      if (stderr) console.error(stderr);
+    },
+    runTests: async () => {
+      // Run configured test command
+      const proc = Bun.spawn(parseShellCommand(config.verification.test_command), {
+        stdout: "pipe", stderr: "pipe", cwd: projectRoot,
+      });
+      const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+      return { passed: exitCode === 0, output: stderr ? `${stdout}\n${stderr}` : stdout };
+    },
+  });
+}
 ```
 
-### prompt.md
+### ralph.sh (Wrapper Script)
 
-The RBP Execution Protocol includes enforcement and consequences (lines 87-100):
+`ralph.sh` in the project root is a convenience wrapper that invokes the TypeScript CLI:
 
-```markdown
-## Enforcement and Consequences
+```bash
+#!/usr/bin/env bash
+# Wrapper for the TypeScript CLI
+exec bun "$(dirname "$0")/lib/src/cli.ts" run "$@"
+```
 
-**CRITICAL: Understanding the stakes of non-compliance**
+### promptv3.md (Agent Execution Protocol)
 
-1. **False Completion Claims**: If you output `<rbp:complete/>` without running close-with-proof.sh, your work will be discarded and re-executed by the next iteration. The task will remain open indefinitely.
+Located at `scripts/promptv3.md`, the RBP Execution Protocol (v3.0) defines comprehensive execution guidance including:
 
-2. **Test Verification Requirement**: Tasks without test proof will remain open indefinitely until properly verified. Ralph will keep attempting the same task in subsequent iterations until tests pass.
+- Small changes philosophy (tracer bullets before full features)
+- Three execution phases: Exploration → Execution → Verification
+- XML-based InjectionContract for structured task context
+- Enforcement of test-gated closure via `ralph close` (CLI command wraps test verification)
+- Failure recovery via decomposition and retries
+- Context window budget management (small changes = big testing budget)
 
-3. **Failure Recovery**: On test failure, fix the code and retry—do not give up or skip to other tasks. The notes from your failed attempt will be injected into the next iteration's prompt as context.
+The prompt enforces quality through:
 
-4. **Accountability**: Every closure is recorded in git with test output as proof. Claiming completion without verification creates technical debt and wastes iteration cycles.
-
-**The protocol is not optional.** Following these steps ensures quality, maintains system trust, and prevents infinite retry loops.
+```xml
+<EnforcementAndConsequences>
+  <Clause id="E1" name="Context Window Management">
+    <Statement>
+      If you make large changes and tests fail, you'll be in the dumb zone
+      trying to fix cascading failures. Small changes = small blast radius = room to recover.
+    </Statement>
+  </Clause>
+  <Clause id="E2" name="False Completion">
+    <Statement>
+      Outputting <![CDATA[<rbp:complete/>]]> without `ralph close` proof means work is discarded.
+      Task remains open. Next iteration re-attempts.
+    </Statement>
+  </Clause>
+  <Clause id="E3" name="Decomposition is Success">
+    <Statement>
+      Recognizing a task is too large and decomposing it is correct behavior.
+      <![CDATA[<rbp:decomposed/>]]> is a valid, successful outcome.
+    </Statement>
+  </Clause>
+  <Finality>The protocol is not optional. Small changes. Big testing. Stay smart.</Finality>
+</EnforcementAndConsequences>
 ```
 
 ---
 
-## Hook Configuration
+## Configuration
 
-### Project-Level Settings (.claude/settings.json)
+### Ralph Configuration (rbp-config.yaml)
+
+Ralph uses a YAML configuration file with the following schema:
+
+```yaml
+project:
+  name: "your-project-name"
+  description: "Optional project description"
+
+paths:
+  stories: "docs/bmm/implementation-artifacts/stories"
+  specs: "specs"
+  beads: ".beads"
+  scripts: "scripts"                    # NOT scripts/rbp - top-level scripts dir
+  commands: "commands/rbp"              # NOT .claude/commands/rbp
+
+execution:
+  max_iterations: 50                    # 1-1000, default 50
+  phase_size: 5                         # Subtasks per execution phase
+  iteration_delay: 2                    # Seconds between iterations
+
+verification:
+  require_tests: true
+  require_playwright_for_ui: true
+  test_command: "bun test"
+  typecheck_command: "bun run typecheck"
+  playwright_command: "bunx playwright test"
+
+ui_detection:
+  enabled: true
+  keywords: ["UI", "component", "button", "form"]
+
+bmad:
+  epics_dir: "docs/bmm/epics"          # Optional
+  stories_dir: "docs/bmm/implementation-artifacts/stories"
+  create_story: "/bmad:bmm:workflows:create-story"
+  dev_story: "/bmad:bmm:workflows:dev-story"
+  code_review: "/bmad:bmm:workflows:code-review"
+
+quick_plan:
+  command: "/quick-plan"
+  spec_template: "templates/spec-template.md"
+
+codex:
+  enabled: true
+  model: "gpt-5-codex"
+  reasoning_effort: "high"              # low | medium | high
+  skip_by_default: false
+
+observability:
+  enabled: true
+  auto_launch: true
+  pai_install_check: true
+
+hooks:
+  session_start: []                     # Array of shell commands
+  pre_compact: []                       # Array of shell commands
+```
+
+All sections are optional with defaults defined in `lib/src/config/schema.ts`.
+
+### Claude Settings (.claude/settings.json)
+
+Project-level Claude configuration (separate from RBP config):
 
 ```json
 {
   "hooks": {
     "SessionStart": [
-      {
-        "type": "command",
-        "command": "bd prime 2>/dev/null || echo 'Beads not initialized'"
-      },
-      {
-        "type": "command",
-        "command": "scripts/rbp/show-active-task.sh"
-      }
-    ],
-    "PreCompact": [
-      {
-        "type": "command",
-        "command": "scripts/rbp/save-progress-to-beads.sh"
-      }
+      {"type": "command", "command": "bd prime 2>/dev/null || true"}
     ]
   },
   "permissions": {
     "allow": [
       "Bash(bd *)",
       "Bash(bun *)",
-      "Bash(bunx playwright *)",
-      "Bash(scripts/rbp/*)"
+      "Bash(bunx playwright *)"
     ]
   }
 }
@@ -570,37 +733,93 @@ Note: No `PostToolUse` hook for syncing - Beads is the source of truth, not stor
 
 ## File Structure
 
+### RBP Package (Installable)
+
+```
+rbp/                               # Installable package
+├── lib/src/                       # TypeScript CLI source (PRIMARY)
+│   ├── cli.ts                     # Main CLI entrypoint
+│   ├── commands/
+│   │   ├── run.ts                 # Run command (default)
+│   │   ├── status.ts              # Status command
+│   │   ├── close.ts               # Close command
+│   │   └── exec-spec.ts           # Execute spec command
+│   ├── workflows/
+│   │   ├── beads.ts               # Beads workflow implementation
+│   │   ├── bmad.ts                # BMAD workflow implementation
+│   │   └── codex.ts               # Codex review workflow
+│   ├── config/
+│   │   ├── schema.ts              # Zod config schema
+│   │   ├── loader.ts              # Config file loader
+│   │   └── types.ts               # TypeScript config types
+│   ├── integrations/
+│   │   ├── beads-cli.ts           # Beads CLI wrapper
+│   │   └── claude-cli.ts          # Claude CLI wrapper
+│   ├── observability/
+│   │   ├── logger.ts              # Structured logging
+│   │   ├── events.ts              # Event emission
+│   │   └── sanitizer.ts           # Output sanitization
+│   ├── parsers/
+│   │   ├── story-to-beads.ts      # BMAD story parser
+│   │   ├── spec-to-beads.ts       # Spec parser
+│   │   └── sequencer.ts           # Execution phase grouping
+│   └── utils/
+│       ├── errors.ts              # Error types and handling
+│       ├── shell.ts               # Shell command utilities
+│       └── project-detector.ts    # Project structure detection
+│
+├── scripts/
+│   ├── promptv3.md                # Agent execution protocol (v3.0)
+│   └── progress.txt               # Append-only execution log
+│
+├── commands/rbp/                  # Slash commands for Claude
+│   ├── start.md                   # /rbp:start
+│   ├── status.md                  # /rbp:status
+│   └── validate.md                # /rbp:validate
+│
+├── templates/
+│   ├── settings.json              # .claude/settings.json template
+│   ├── rbp-config.yaml            # Configuration template
+│   └── spec-template.md           # Quick-plan spec template
+│
+├── ralph.sh                       # Wrapper script (calls lib/src/cli.ts)
+├── install.sh                     # Installation script
+├── validate.sh                    # Validation script
+└── uninstall.sh                   # Uninstallation script
+```
+
+### Installed Project Structure
+
 ```
 your-project/
 ├── .claude/
-│   └── settings.json              # Project-level hooks
+│   └── settings.json              # Claude hooks (from template)
 │
 ├── .beads/
 │   ├── config.yaml                # Beads configuration
 │   ├── issues.jsonl               # SOURCE OF TRUTH (git-tracked)
 │   └── beads.db                   # SQLite cache (gitignored)
 │
-├── _bmad/                         # BMAD installation (unchanged)
+├── _bmad/                         # BMAD installation (if using BMAD)
 │   └── bmm/workflows/
 │
 ├── docs/bmm/implementation-artifacts/
 │   ├── stories/                   # BMAD story files (reference only)
 │   └── sprint-status.yaml
 │
-├── scripts/rbp/
-│   ├── ralph.sh                   # Main execution loop
-│   ├── prompt.md                  # Agent instructions
-│   ├── progress.txt               # Append-only learnings
-│   ├── sequencer.sh               # Execution phase grouping
-│   ├── close-with-proof.sh        # Test-gated bead closure
-│   ├── parse-story-to-beads.sh    # One-time story → beads conversion
-│   ├── parse-spec-to-beads.sh     # Spec → beads with atomic subtasks
-│   ├── show-active-task.sh
-│   └── save-progress-to-beads.sh
+├── scripts/
+│   ├── promptv3.md                # Agent protocol (copied from rbp/scripts/)
+│   └── progress.txt               # Execution log
+│
+├── commands/rbp/                  # Slash commands (copied from rbp/commands/)
+│   ├── start.md
+│   ├── status.md
+│   └── validate.md
 │
 ├── tests/                         # Playwright tests
 │   └── *.spec.ts
 │
+├── rbp-config.yaml                # Ralph configuration
 ├── AGENTS.md                      # Permanent agent memory
 └── CLAUDE.md                      # Project context
 ```
@@ -648,7 +867,7 @@ bd init
 mkdir -p scripts/rbp
 
 # 4. Copy RBP scripts (from this spec or template repo)
-# ralph.sh, prompt.md, sequencer.sh, close-with-proof.sh, etc.
+# ralph.sh, promptv3.md, sequencer.sh, close-with-proof.sh, etc.
 
 # 5. Create project-level Claude settings
 mkdir -p .claude
@@ -674,17 +893,64 @@ echo "# RBP Progress Log" > scripts/rbp/progress.txt
 
 ## Execution Flow
 
-### Starting a New Story
+### CLI Commands
 
 ```bash
-# 1. Create story using BMAD (existing workflow)
+# Run the execution loop (primary command)
+bun lib/src/cli.ts run
+# or using wrapper
+./ralph.sh
+
+# Run with specific workflow
+ralph run --beads                  # Force Beads workflow
+ralph run --bmad                   # Force BMAD workflow
+
+# Run with options
+ralph run --max-iterations 100     # Custom max iterations
+ralph run --dry-run                # Preview what would happen
+
+# Check current status
+ralph status
+
+# Close a task with test verification
+ralph close <bead-id>
+ralph close <bead-id> --force      # Skip tests (not recommended)
+
+# Execute a spec file
+ralph exec-spec specs/feature.md
+ralph exec-spec specs/feature.md --skip-review  # Skip Codex review
+
+# Global options (all commands)
+ralph --verbose run                # Debug logging
+ralph --quiet run                  # Minimal logging
+ralph --config custom.yaml run     # Custom config file
+ralph --no-json-errors run         # Human-readable errors
+```
+
+### Starting a New Story (BMAD Workflow)
+
+```bash
+# 1. Create story using BMAD
 # Invoke: /bmad:bmm:workflows:create-story
 
 # 2. Convert story to Beads (one-time)
-scripts/rbp/parse-story-to-beads.sh docs/bmm/implementation-artifacts/stories/story-X-Y-title.md
+# Parser scripts are in lib/src/parsers/ (TypeScript)
+# Or use bd CLI directly to create issues
 
 # 3. Start Ralph loop
-scripts/rbp/ralph.sh
+ralph run --bmad
+```
+
+### Starting a New Task (Beads Workflow)
+
+```bash
+# 1. Create beads manually or import from spec
+bd create "Implement feature X"
+
+# 2. Start Ralph loop
+ralph run --beads
+# Or auto-detect:
+ralph run
 ```
 
 ### Resuming Work
@@ -692,7 +958,7 @@ scripts/rbp/ralph.sh
 ```bash
 # Ralph automatically resumes from where it left off
 # bd ready returns the next unblocked task (or retry if previous failed)
-scripts/rbp/ralph.sh
+ralph run
 ```
 
 ---
@@ -731,6 +997,9 @@ watch -n 5 "bd list --json | jq '.[] | {id, title, status}'"
 - Added: Atomic subtask creation with dependency chaining
 - Added: Enforcement and Consequences section in protocol
 - Added: Failure note appending in close-with-proof.sh
+- Added: Extended Bead schema with description, acceptance_criteria, estimated_size, parent_id
+- Added: buildTaskXml() function for XML task injection matching promptv3 InjectionContract
+- Added: promptv3.md with XML InjectionContract for structured task context
 - Removed: PostToolUse sync hook (no longer needed)
 - Removed: story.json concept (use Beads directly)
 - Updated: Story analysis from 76 real BMAD stories

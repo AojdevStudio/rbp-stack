@@ -9,7 +9,7 @@ Display current RBP execution status including task progress, ready tasks, and r
 
 ## Variables
 
-RALPH_CLI: bun ./rbp/lib/src/index.ts
+RALPH_CLI: ./scripts/rbp/ralph.sh
 PROGRESS_FILE: scripts/rbp/progress.txt
 TAIL_LINES: 10
 
@@ -17,7 +17,7 @@ TAIL_LINES: 10
 
 **Option 1: Use ralph status command (recommended)**
 ```bash
-bun ./rbp/lib/src/index.ts status
+./scripts/rbp/ralph.sh status
 ```
 This shows current execution state including task progress, project type, and next actions.
 
@@ -46,6 +46,6 @@ Recent Progress:
 [last TAIL_LINES lines from progress log]
 
 Recommended Action:
-- If tasks ready: `/rbp:start` or `bun ./rbp/lib/src/index.ts start`
+- If tasks ready: `/rbp:start` or `./scripts/rbp/ralph.sh start`
 - If all complete: Proceed to code review
 - If blocked: Resolve dependencies with `bd show <id>`

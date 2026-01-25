@@ -2,8 +2,32 @@
 
 **Last Updated:** January 20, 2026
 
-*For Claude Code only*: ALWAYS use the `AskUserQuestion` tool when posing questions to the user.
-Autonomous Epic implementation system. Test-gated verification prevents false completion claims.
+*For Claude Code only*: 
+
+<ToolPolicy xmlns:tool="urn:claude:tools"
+            precedence="OVERRIDE_DEFAULT"
+            enforcement="MANDATORY">
+
+  <Rule id="AUQ-1" scope="ALL_QUESTIONS">
+    <Condition>You need information from the user</Condition>
+    <Condition>You are uncertain about requirements</Condition>
+    <Condition>Multiple valid interpretations exist</Condition>
+    <Condition>You would otherwise guess or assume</Condition>
+    <Action tool="AskUserQuestion" enforcement="REQUIRED">
+      Use the AskUserQuestion tool. Do NOT embed questions in prose.
+    </Action>
+    <Prohibition>
+      Never ask questions in plain text without invoking the tool.
+    </Prohibition>
+  </Rule>
+
+  <Consequence violation="AUQ-1">
+    Questions asked outside the tool are ignored by the user's interface.
+    The user cannot see or respond to plain-text questions.
+  </Consequence>
+
+</ToolPolicy>
+
 
 ## Task Tracking
 
