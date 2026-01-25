@@ -19,8 +19,19 @@
     "ai",
     "autonomous",
     "execution",
-    "beads"
+    "beads",
+    "cli",
+    "task-runner"
   ],
+  "author": "AojdevStudio",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AojdevStudio/rbp-stack.git"
+  },
+  "homepage": "https://github.com/AojdevStudio/rbp-stack#readme",
+  "bugs": {
+    "url": "https://github.com/AojdevStudio/rbp-stack/issues"
+  },
   "license": "MIT",
   "engines": {
     "node": ">=18",
