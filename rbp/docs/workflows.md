@@ -156,10 +156,17 @@ bd graph
 4. Runs `ralph run` (auto-detects BMAD workflow)
 5. Loops until completion
 
-**Manual execution:**
+**Using ralph CLI directly:**
 
 ```bash
+# Auto-detect workflow
+ralph run
+
+# Force BMAD workflow
 ralph run --bmad
+
+# With multi-provider support (claude, gemini, or codex)
+ralph run --agent claude
 ```
 
 ---
@@ -605,6 +612,9 @@ ralph exec-spec specs/user-auth.md --skip-review
 # Limit iterations
 ralph exec-spec specs/user-auth.md --max-iterations 20
 
+# Use different AI provider
+ralph exec-spec specs/user-auth.md --agent gemini
+
 # Dry run
 ralph exec-spec specs/user-auth.md --dry-run
 ```
@@ -652,19 +662,23 @@ Update spec if needed → Re-parse → Continue
 ### Pattern 1: Starting Fresh Project
 
 ```bash
-# 1. Initialize beads
+# 1. Install RBP (if not already)
+bun add -g rbp-stack
+
+# 2. Initialize RBP and Beads
+ralph init
 bd init
 bd config set project.name "My Project"
 
-# 2. Create initial tasks
+# 3. Create initial tasks
 bd create "Setup project structure" --priority 1
 bd create "Add linting and formatting" --priority 2
 bd create "Configure CI/CD" --priority 3
 
-# 3. Start autonomous execution
+# 4. Start autonomous execution
 ralph run
 
-# 4. Monitor
+# 5. Monitor
 watch -n 5 "bd list --status open"
 ```
 

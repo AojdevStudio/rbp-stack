@@ -51,221 +51,190 @@ Before installing the RBP Stack, ensure you have the following dependencies inst
 
 For experienced users who want to get started immediately:
 
+**Option A: npm Package (Recommended)**
+
 ```bash
-# 1. Clone or download RBP package
-git clone https://github.com/AojdevStudio/rbp-stack.git rbp
-cd rbp
+# 1. Install RBP globally
+bun add -g rbp-stack
 
 # 2. Navigate to your project
 cd /path/to/your/project
 
-# 3. Run installer
-/path/to/rbp/install.sh
+# 3. Initialize RBP (auto-detects tech stack)
+ralph init
 
-# 4. Validate installation
-./validate.sh
-
-# 5. Initialize Beads (if not already initialized)
+# 4. Initialize Beads (if not already initialized)
 bd init
 
-# 6. Start using RBP
-bun lib/src/cli.ts run
+# 5. Start using RBP
+ralph run
+```
+
+**Option B: Use Without Installing**
+
+```bash
+# Run directly with bunx (no global install needed)
+cd /path/to/your/project
+bunx ralph init
+bunx ralph run
+```
+
+**Option C: Clone Repository (Development)**
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/AojdevStudio/rbp-stack.git
+cd rbp-stack/rbp
+
+# 2. Build and link
+bun install && bun run build && bun link
+
+# 3. Navigate to your project
+cd /path/to/your/project
+
+# 4. Initialize and run
+ralph init
+ralph run
 ```
 
 ---
 
 ## Detailed Installation
 
-### Step 1: Obtain the RBP Package
+### Method 1: npm Package (Recommended)
 
-**Option A: Clone from Git**
+The simplest way to use RBP Stack is via the published npm package.
+
+**Global Installation:**
+
 ```bash
-git clone https://github.com/AojdevStudio/rbp-stack.git rbp
-cd rbp
+# Install globally with bun
+bun add -g rbp-stack
+
+# Or with npm
+npm install -g rbp-stack
 ```
 
-**Option B: Download ZIP**
+**Per-Project Installation:**
+
 ```bash
-curl -LO https://github.com/AojdevStudio/rbp-stack/archive/main.zip
-unzip main.zip
-mv rbp-stack-main rbp
-cd rbp
+# Add as dev dependency
+bun add -D rbp-stack
+
+# Run via package.json scripts
+# Add to package.json: "scripts": { "ralph": "ralph" }
+bun run ralph run
 ```
 
-**Option C: Use from Local Development**
+**No Installation (bunx):**
+
 ```bash
-# If you already have RBP checked out
-cd /path/to/rbp-stack
+# Run directly without installing
+bunx ralph init
+bunx ralph run
+bunx ralph status
 ```
 
-### Step 2: Navigate to Your Project
+### Method 2: Clone Repository (Development/Contributing)
+
+For contributing or local development:
+
+```bash
+# Clone the repository
+git clone https://github.com/AojdevStudio/rbp-stack.git
+cd rbp-stack/rbp
+
+# Install dependencies and build
+bun install
+bun run build
+
+# Link for global access
+bun link
+
+# Now 'ralph' command is available globally
+ralph --version
+```
+
+### Method 3: Legacy Installer (Deprecated)
+
+> **Note:** The `install.sh` script is deprecated. Use npm package instead.
+
+For projects that need the legacy installation method:
+
+```bash
+# Clone the repository
+git clone https://github.com/AojdevStudio/rbp-stack.git
+
+# Run legacy installer
+./rbp-stack/rbp/install.sh /path/to/your/project
+
+# This copies files to your project (not recommended)
+```
+
+### Post-Installation Setup
+
+After installing via any method:
+
+**1. Initialize RBP in your project:**
 
 ```bash
 cd /path/to/your/project
+
+# Initialize with auto-detection
+ralph init
+
+# Or preview what will be created
+ralph init --dry-run
 ```
 
-Your project should be a git repository. If not, initialize it:
+**What `ralph init` does:**
+- Detects your tech stack (test command, package manager)
+- Creates `rbp-config.yaml` with sensible defaults
+- Sets up `.claude/settings.json` with RBP hooks
+- Detects existing Beads setup
 
-```bash
-git init
-```
-
-### Step 3: Run the Installer
-
-The installer will copy all necessary files to your project:
-
-```bash
-/path/to/rbp/install.sh
-```
-
-**What the installer does:**
-
-1. **Copies TypeScript CLI**
-   - Copies `lib/` directory containing the TypeScript source
-   - Preserves `lib/dist/` compiled JavaScript
-
-2. **Copies Scripts**
-   - `scripts/promptv3.md` - Agent execution protocol
-   - `scripts/progress.txt` - Execution log template
-
-3. **Copies Slash Commands**
-   - `commands/rbp/start.md` - `/rbp:start` command
-   - `commands/rbp/status.md` - `/rbp:status` command
-   - `commands/rbp/validate.md` - `/rbp:validate` command
-
-4. **Copies Templates**
-   - `templates/settings.json` - Claude settings template
-   - `templates/rbp-config.yaml` - Configuration template
-
-5. **Creates Wrapper Script**
-   - `ralph.sh` - Convenience wrapper for TypeScript CLI
-
-6. **Sets Up Claude Configuration**
-   - Creates or updates `.claude/settings.json`
-   - Adds SessionStart hooks for `bd prime`
-   - Adds permission allowances for `bd` and `bun` commands
-
-7. **Creates RBP Configuration**
-   - Creates `rbp-config.yaml` with default values
-   - Customizes paths based on project structure
-
-**Example output:**
-```
-RBP Stack Installer v3.0.0
-==========================
-
-Checking prerequisites...
-✓ bun found (v1.0.20)
-✓ bd found (v0.5.2)
-✓ claude found (v1.2.0)
-✓ git found (v2.39.2)
-
-Installing RBP to: /Users/you/project
-
-Copying files...
-✓ lib/ copied
-✓ scripts/ copied
-✓ commands/rbp/ copied
-✓ templates/ copied
-✓ ralph.sh created
-
-Configuring project...
-✓ .claude/settings.json created
-✓ rbp-config.yaml created
-
-Installation complete!
-
-Next steps:
-1. Run ./validate.sh to verify installation
-2. Run bd init (if not already initialized)
-3. Run bun lib/src/cli.ts run to start
-```
-
-### Step 4: Install Dependencies
-
-If your project doesn't have a `package.json`, the installer will create one. Install dependencies:
-
-```bash
-bun install
-```
-
-### Step 5: Initialize Beads
-
-If your project doesn't already have Beads initialized:
+**2. Initialize Beads (if not already):**
 
 ```bash
 bd init
-```
 
-This creates:
-- `.beads/issues.jsonl` - Task database (git-tracked)
-- `.beads/config.yaml` - Beads configuration
-- `.beads/beads.db` - SQLite cache (gitignored)
-
-**Configure Beads for your project:**
-```bash
-# Set project name
+# Configure project
 bd config set project.name "Your Project Name"
-
-# Set default labels
 bd config set defaults.labels "rbp,auto"
 ```
 
-### Step 6: Install Playwright (Optional, for UI Testing)
-
-If your project includes UI components:
+**3. Install Playwright (Optional, for UI Testing):**
 
 ```bash
 bunx playwright install
 ```
 
-This installs browser binaries for Chromium, Firefox, and WebKit.
-
 ---
 
 ## Post-Install Validation
 
-### Run the Validator
+### Verify Installation
 
-The validator checks that all components are correctly installed:
+**Check ralph command:**
 
 ```bash
-./validate.sh
+ralph --version
+# Should output: 3.0.0
 ```
 
-**Expected output:**
+**Check status:**
+
+```bash
+ralph status
+# Shows current RBP configuration and task state
 ```
-RBP Stack Validation v3.0.0
-============================
 
-Checking prerequisites...
-✓ bun (v1.0.20)
-✓ bd (v0.5.2)
-✓ claude (v1.2.0)
-✓ git (v2.39.2)
+**Run built-in validation:**
 
-Checking installation...
-✓ lib/dist/index.js exists
-✓ scripts/promptv3.md exists
-✓ commands/rbp/start.md exists
-✓ commands/rbp/status.md exists
-✓ commands/rbp/validate.md exists
-✓ ralph.sh exists and is executable
-✓ .claude/settings.json exists
-✓ rbp-config.yaml exists
-
-Checking Beads...
-✓ .beads/issues.jsonl exists
-✓ .beads/config.yaml exists
-✓ bd ready command works
-
-Checking configuration...
-✓ rbp-config.yaml is valid YAML
-✓ Paths are correctly configured
-
-All checks passed! ✓
-
-Run 'bun lib/src/cli.ts run' to start.
+```bash
+# In Claude Code CLI
+/rbp:validate
+# Runs comprehensive validation checks
 ```
 
 ### Manual Verification
@@ -276,17 +245,26 @@ bd status
 # Should show project status without errors
 ```
 
-**Test Ralph CLI:**
+**Test configuration:**
 ```bash
-bun lib/src/cli.ts --version
-# Should output: 3.0.0
+ralph run --dry-run
+# Shows what would happen without making changes
 ```
 
-**Test Slash Commands:**
-```bash
-# In Claude Code CLI
-/rbp:validate
-# Should run validation checks
+**Expected dry-run output:**
+```
+[DRY RUN] Execution Plan
+========================
+
+Workflow: BEADS
+Max iterations: 50
+Test command: bun test
+
+Would query 'bd ready' for next task
+Would invoke Claude for each task
+Would run tests before closing tasks
+
+[DRY RUN] No changes made
 ```
 
 ---
@@ -614,20 +592,27 @@ After successful installation:
 
 Use this checklist to ensure complete installation:
 
+**Prerequisites:**
 - [ ] Beads CLI installed (`bd --version`)
 - [ ] Bun runtime installed (`bun --version`)
 - [ ] Claude Code CLI installed (`claude --version`)
 - [ ] Git installed (`git --version`)
-- [ ] RBP package downloaded
-- [ ] Installer executed (`install.sh`)
-- [ ] Validation passed (`./validate.sh`)
+
+**RBP Installation:**
+- [ ] RBP installed (`bun add -g rbp-stack` or `bunx ralph --version`)
+- [ ] Project initialized (`ralph init`)
+- [ ] Configuration created (`rbp-config.yaml` exists)
+
+**Beads Setup:**
 - [ ] Beads initialized (`bd init`)
-- [ ] Dependencies installed (`bun install`)
-- [ ] Configuration customized (`rbp-config.yaml`)
-- [ ] Playwright installed (if needed, `bunx playwright install`)
+- [ ] Project configured (`bd config set project.name "..."`)
+
+**Verification:**
+- [ ] Ralph CLI working (`ralph --version` → 3.0.0)
+- [ ] Dry run succeeds (`ralph run --dry-run`)
 - [ ] Test command working (`bun test`)
-- [ ] Ralph CLI working (`bun lib/src/cli.ts --version`)
 - [ ] Slash commands available (`/rbp:validate`)
+- [ ] Playwright installed (if needed, `bunx playwright install`)
 
 ---
 

@@ -28,14 +28,14 @@ The Ralph CLI is the primary interface for autonomous task execution in the RBP 
 ### Invocation
 
 ```bash
-# Direct invocation
-bun lib/src/cli.ts [command] [options]
-
-# Using wrapper script
-./ralph.sh [command] [options]
-
-# If installed globally (after bun link)
+# Via npm package (recommended)
 ralph [command] [options]
+
+# Without installing (using bunx)
+bunx ralph [command] [options]
+
+# From local development build
+bun lib/src/cli.ts [command] [options]
 ```
 
 ### Command Structure

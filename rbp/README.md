@@ -221,15 +221,40 @@ curl -fsSL https://bun.sh/install | bash
 
 ### Install
 
+**Option A: npm Package (Recommended)**
+
+```bash
+# Install globally
+bun add -g rbp-stack
+
+# Or use directly without installing
+bunx ralph init
+bunx ralph run
+bunx ralph status
+```
+
+**Option B: Clone Repository (Development)**
+
 ```bash
 # Clone the repository
 git clone https://github.com/AojdevStudio/rbp-stack.git
+cd rbp-stack/rbp
 
-# Install into your project
-./rbp/install.sh /path/to/your/project
+# Build the CLI
+bun install && bun run build
 
-# Validate installation
-/path/to/your/project/scripts/rbp/validate.sh
+# Link for local development
+bun link
+```
+
+### Initialize Your Project
+
+```bash
+# Initialize RBP in your project (auto-detects tech stack)
+ralph init
+
+# Or with dry-run to preview
+ralph init --dry-run
 ```
 
 ### Run (Two Workflows)
@@ -241,10 +266,10 @@ git clone https://github.com/AojdevStudio/rbp-stack.git
 /bmad:bmm:workflows:create-story
 
 # Convert to beads
-./scripts/rbp/parse-story-to-beads.sh docs/stories/story-001.md
+ralph parse-story docs/stories/story-001.md
 
 # Launch autonomous execution
-./scripts/rbp/ralph.sh
+ralph run
 ```
 
 **Workflow B: Quick-Plan Specs** (interview-driven)
@@ -254,10 +279,10 @@ git clone https://github.com/AojdevStudio/rbp-stack.git
 /quick-plan "add user authentication with JWT"
 
 # Execute with optional Codex pre-flight review
-./scripts/rbp/ralph-execute.sh specs/add-user-authentication.md
+ralph exec-spec specs/add-user-authentication.md
 
 # Or skip the Codex review
-./scripts/rbp/ralph-execute.sh specs/add-user-authentication.md --skip-review
+ralph exec-spec specs/add-user-authentication.md --skip-review
 ```
 
 **Monitor Progress**
@@ -266,6 +291,7 @@ git clone https://github.com/AojdevStudio/rbp-stack.git
 bd status        # Task status
 bd list --open   # Open tasks
 bd tree          # Task hierarchy
+ralph status     # RBP execution status
 ```
 
 <br />
@@ -510,38 +536,41 @@ Scripts cannot be ignored. `close-with-proof.sh` **runs** the tests. Either they
 
 ## What's Included
 
+**npm Package: `rbp-stack`**
+
 ```
-rbp/
-├── scripts/
-│   ├── ralph.sh              # Main execution loop (with failure state injection)
-│   ├── ralph-execute.sh      # Quick-plan execution (with Codex review)
-│   ├── close-with-proof.sh   # Test-gated closure (failure notes appending)
-│   ├── emit-event.sh         # PAI Observability event emitter
-│   ├── parse-story-to-beads.sh  # BMAD Story → Beads conversion
-│   ├── parse-spec-to-beads.sh   # Quick-plan Spec → Beads (atomic subtasks)
-│   ├── sequencer.sh          # Phase grouping for large stories
-│   ├── show-active-task.sh   # Display current task
-│   └── save-progress-to-beads.sh  # Sync progress to bead notes
-├── commands/rbp/
-│   ├── start.md              # /rbp:start command
-│   ├── status.md             # /rbp:status command
-│   └── validate.md           # /rbp:validate command
-├── templates/
-│   ├── rbp-config.yaml         # Base configuration
-│   ├── rbp-config.example.yaml # Documented config
-│   └── spec-template.md        # Spec format template
-├── install.sh                # One-line installation
-├── validate.sh               # Installation checker
-├── docs/
-│   └── rbp-stack-specification.md  # Full technical specification
-└── README.md                 # This file
+rbp-stack/
+├── lib/dist/             # Compiled TypeScript CLI
+│   └── index.js          # Main entry point (ralph command)
+├── scripts/              # Utility scripts
+│   ├── close-with-proof.sh   # Test-gated closure
+│   ├── parse-story-to-beads.sh  # BMAD Story → Beads
+│   └── parse-spec-to-beads.sh   # Quick-plan Spec → Beads
+├── commands/rbp/         # Slash commands
+│   ├── start.md          # /rbp:start command
+│   ├── status.md         # /rbp:status command
+│   └── validate.md       # /rbp:validate command
+├── templates/            # Config templates
+│   ├── rbp-config.yaml   # Base configuration
+│   └── spec-template.md  # Spec format template
+└── ralph.sh              # Wrapper script
 ```
 
-Key recent features:
-- **ralph.sh**: Failure state injection reads notes and injects "Previous Attempt Failed" context
-- **close-with-proof.sh**: Appends test failure notes to beads for retry context
-- **parse-spec-to-beads.sh**: Creates atomic subtasks as separate beads with dependency chaining
-- **prompt.md**: Enforcement and Consequences section explains stakes of non-compliance
+**CLI Commands:**
+
+| Command | Description |
+|---------|-------------|
+| `ralph init` | Initialize RBP in your project with auto-detection |
+| `ralph run` | Run the autonomous execution loop |
+| `ralph status` | Show current execution state |
+| `ralph close <id>` | Close a task with test verification |
+| `ralph exec-spec <file>` | Execute a spec file |
+
+Key features:
+- **Multi-provider support**: Claude, Gemini, or Codex via `--agent` flag
+- **Failure state injection**: Previous attempt context injected into retries
+- **Test-gated closure**: Tasks only close when tests pass
+- **Atomic subtasks**: Dependencies chained automatically
 
 <br />
 
