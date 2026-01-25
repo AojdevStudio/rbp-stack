@@ -65,6 +65,11 @@ export const RbpConfigSchema = z.object({
     session_start: z.array(z.string()).default([]),
     pre_compact: z.array(z.string()).default([]),
   }).default({}),
+
+  notifications: z.object({
+    discord: z.string().optional(),
+    slack: z.string().optional(),
+  }).default({}),
 }).partial().transform((config) => ({
   project: config.project ?? { name: "unknown" },
   paths: {
@@ -117,5 +122,9 @@ export const RbpConfigSchema = z.object({
   hooks: {
     session_start: config.hooks?.session_start ?? [],
     pre_compact: config.hooks?.pre_compact ?? [],
+  },
+  notifications: {
+    discord: config.notifications?.discord,
+    slack: config.notifications?.slack,
   },
 }));

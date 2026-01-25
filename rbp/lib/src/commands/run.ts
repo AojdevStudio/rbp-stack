@@ -7,14 +7,47 @@ import { logger, setLogLevel } from "../observability/logger";
 import { checkBeadsInstalled } from "../integrations/beads-cli";
 import { exitWithError, createError, ErrorCodes } from "../utils/errors";
 import { parseShellCommand } from "../utils/shell";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
 import { findProjectRoot, findSprintStatusPath } from "../utils/project-detector";
+import type { Bead } from "../integrations/beads-cli";
+import { getProvider } from "../providers";
+import { createNotificationManager } from "../notifications/factory";
+
+/**
+ * Build XML task injection matching promptv3 InjectionContract
+ */
+export function buildTaskXml(task: Bead): string {
+  const escapeCdata = (s: string) => s.replace(/]]>/g, "]]]]><![CDATA[>");
+
+  const description = task.description || task.notes || "No description provided";
+  const criteria = task.acceptance_criteria || [];
+  const size = task.estimated_size || "medium";
+
+  const criteriaXml = criteria.length > 0
+    ? criteria.map(c => `      <Criterion><![CDATA[${escapeCdata(c)}]]></Criterion>`).join("\n")
+    : "      <Criterion><![CDATA[Task completed successfully]]></Criterion>";
+
+  return `
+  <CurrentTask>
+    <BeadId><![CDATA[${escapeCdata(task.id)}]]></BeadId>
+    <Title><![CDATA[${escapeCdata(task.title)}]]></Title>
+    <Description><![CDATA[${escapeCdata(description)}]]></Description>
+    <AcceptanceCriteria>
+${criteriaXml}
+    </AcceptanceCriteria>
+    <EstimatedSize>${size}</EstimatedSize>
+    ${task.parent_id ? `<ParentId><![CDATA[${escapeCdata(task.parent_id)}]]></ParentId>` : ""}
+  </CurrentTask>
+`;
+}
 
 export interface RunOptions {
   bmad?: boolean;
   beads?: boolean;
   dryRun?: boolean;
   maxIterations?: string;
+  agent?: string;
 }
 
 export async function runCommand(options: RunOptions): Promise<void> {
@@ -29,6 +62,21 @@ export async function runCommand(options: RunOptions): Promise<void> {
 
   const config = getConfig(globalOptions);
   const maxIterations = parseMaxIterations(options.maxIterations, config.execution.max_iterations);
+
+  const agentName = options.agent ?? "claude";
+  const provider = getProvider(agentName);
+
+  if (!provider.isAvailable()) {
+    exitWithError(
+      createError(
+        ErrorCodes.MISSING_PREREQUISITE,
+        `Provider ${agentName} is not available`,
+        {
+          suggestion: `Install ${agentName} CLI or use a different provider with --agent flag`,
+        }
+      )
+    );
+  }
 
   logger.banner("Ralph - Autonomous Execution Loop", "RBP Stack v3.0");
 
@@ -62,7 +110,13 @@ export async function runCommand(options: RunOptions): Promise<void> {
     );
   }
 
+  const notificationManager = createNotificationManager(config);
+  if (notificationManager.hasConfiguredServices()) {
+    logger.info("Notifications: Enabled");
+  }
+
   logger.info(`Workflow: ${workflow.toUpperCase()}`);
+  logger.info(`Agent Provider: ${provider.name}`);
   logger.info(`Config: ${globalOptions.config ?? "default"}`);
   logger.info(`Max Iterations: ${maxIterations}`);
   logger.info(`Dry Run: ${options.dryRun ?? false}`);
@@ -90,48 +144,39 @@ export async function runCommand(options: RunOptions): Promise<void> {
       config,
       maxIterations,
       dryRun: options.dryRun,
+      notificationManager,
       onTaskReady: async (task) => {
-        logger.info(`Invoking Claude for task: ${task.id}`);
-        const proc = Bun.spawn(
-          ["claude", "--dangerously-skip-permissions"],
-          {
-            stdin: "pipe",
-            stdout: "pipe",
-            stderr: "pipe",
-            cwd: projectRoot,
-          }
-        );
+        logger.info(`Invoking ${provider.name} for task: ${task.id}`);
 
-        const prompt = `# RBP Task Execution
+        const promptPath = join(projectRoot, "scripts/rbp/promptv3.md");
+        if (!existsSync(promptPath)) {
+          exitWithError(
+            createError(
+              ErrorCodes.CONFIG_NOT_FOUND,
+              `Prompt file not found: ${promptPath}`,
+              {
+                suggestion: "Ensure RBP is properly installed with 'scripts/rbp/promptv3.md' present",
+              }
+            )
+          );
+        }
 
-## Current Task
+        const promptContent = readFileSync(promptPath, "utf-8");
+        const taskXml = buildTaskXml(task);
+        const prompt = `${promptContent}\n\n<!-- Task injected by Ralph -->\n${taskXml}`;
 
-\`\`\`json
-${JSON.stringify(task, null, 2)}
-\`\`\`
+        const result = await provider.execute(prompt, { cwd: projectRoot });
 
-Execute this task following the RBP Protocol. Run tests to verify completion before marking the task as complete.
-`;
-
-        proc.stdin?.write(new TextEncoder().encode(prompt));
-        proc.stdin?.end();
-
-        const [stdout, stderr, exitCode] = await Promise.all([
-          new Response(proc.stdout).text(),
-          new Response(proc.stderr).text(),
-          proc.exited,
-        ]);
-
-        if (exitCode !== 0) {
-          logger.warn("Claude execution had non-zero exit code");
-          if (stderr) {
-            logger.debug(`Claude stderr: ${stderr}`);
+        if (!result.success) {
+          logger.warn(`${provider.name} execution had non-zero exit code`);
+          if (result.stderr) {
+            logger.debug(`${provider.name} stderr: ${result.stderr}`);
           }
         }
 
-        console.log(stdout);
-        if (stderr) {
-          console.error(stderr);
+        console.log(result.stdout);
+        if (result.stderr) {
+          console.error(result.stderr);
         }
       },
       runTests: async () => {
@@ -163,20 +208,9 @@ Execute this task following the RBP Protocol. Run tests to verify completion bef
       maxIterations,
       dryRun: options.dryRun,
       invokeSlashCommand: async (command: string, args?: string[]) => {
-        logger.info(`Invoking BMAD workflow: ${command} ${args?.join(" ") ?? ""}`);
+        logger.info(`Invoking BMAD workflow with ${provider.name}: ${command} ${args?.join(" ") ?? ""}`);
 
-        // Build the slash command invocation
         const slashCommand = args?.length ? `${command} ${args.join(" ")}` : command;
-
-        const proc = Bun.spawn(
-          ["claude", "--dangerously-skip-permissions"],
-          {
-            stdin: "pipe",
-            stdout: "pipe",
-            stderr: "pipe",
-            cwd: projectRoot,
-          }
-        );
 
         const prompt = `# BMAD Workflow Execution
 
@@ -189,26 +223,19 @@ ${slashCommand}
 Execute this workflow following BMAD standards. After completion, run tests to verify the implementation.
 `;
 
-        proc.stdin?.write(new TextEncoder().encode(prompt));
-        proc.stdin?.end();
+        const result = await provider.execute(prompt, { cwd: projectRoot });
 
-        const [stdout, stderr, exitCode] = await Promise.all([
-          new Response(proc.stdout).text(),
-          new Response(proc.stderr).text(),
-          proc.exited,
-        ]);
-
-        if (exitCode !== 0) {
-          logger.warn(`BMAD workflow had non-zero exit code: ${exitCode}`);
-          if (stderr) {
-            logger.debug(`stderr: ${stderr}`);
+        if (!result.success) {
+          logger.warn(`BMAD workflow had non-zero exit code: ${result.exitCode}`);
+          if (result.stderr) {
+            logger.debug(`stderr: ${result.stderr}`);
           }
-          throw new Error(`Workflow ${command} failed with exit code ${exitCode}`);
+          throw new Error(`Workflow ${command} failed with exit code ${result.exitCode}`);
         }
 
-        console.log(stdout);
-        if (stderr) {
-          console.error(stderr);
+        console.log(result.stdout);
+        if (result.stderr) {
+          console.error(result.stderr);
         }
       },
     });
@@ -225,6 +252,7 @@ export const runCommandDef = new Command("run")
   .description("Run the execution loop (default command)")
   .option("--bmad", "Use BMAD workflow")
   .option("--beads", "Use Beads workflow")
+  .option("--agent <provider>", "AI provider to use (claude, gemini, codex)", "claude")
   .option("--dry-run", "Show what would happen without executing")
   .option("--max-iterations <n>", "Maximum iterations")
   .action(runCommand);

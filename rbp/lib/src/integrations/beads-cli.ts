@@ -16,6 +16,11 @@ export const BeadSchema = z.object({
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
   created_by: z.string().optional(),
+  // Extended fields for RBP InjectionContract
+  description: z.string().optional(),
+  acceptance_criteria: z.array(z.string()).optional(),
+  estimated_size: z.enum(["small", "medium", "needs-decomposition"]).optional(),
+  parent_id: z.string().optional(),
 });
 
 export const BeadListSchema = z.array(BeadSchema);

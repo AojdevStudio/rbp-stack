@@ -1,0 +1,5 @@
+src/
+*.test.ts
+tsconfig.json
+node_modules/
+.beads/

@@ -46,6 +46,6 @@ Recent Progress:
 [last TAIL_LINES lines from progress log]
 
 Recommended Action:
-- If tasks ready: `/rbp:start` or `./scripts/rbp/ralph.sh start`
+- If tasks ready: `./scripts/rbp/ralph.sh start`
 - If all complete: Proceed to code review
 - If blocked: Resolve dependencies with `bd show <id>`

@@ -16,6 +16,8 @@ import {
 } from "../observability/events";
 import { logger } from "../observability/logger";
 import { createError, ErrorCodes, type RbpError } from "../utils/errors";
+import { createNotificationManager } from "../notifications/factory";
+import type { NotificationManager } from "../notifications";
 
 export interface BeadsWorkflowOptions {
   config: RbpConfig;
@@ -23,6 +25,7 @@ export interface BeadsWorkflowOptions {
   dryRun?: boolean;
   onTaskReady?: (task: Bead) => Promise<void>;
   runTests?: () => Promise<{ passed: boolean; output: string }>;
+  notificationManager?: NotificationManager;
 }
 
 export interface BeadsWorkflowResult {
@@ -46,6 +49,7 @@ export async function runBeadsWorkflow(options: BeadsWorkflowOptions): Promise<B
     dryRun = false,
     onTaskReady,
     runTests,
+    notificationManager,
   } = options;
 
   let tasksCompleted = 0;
@@ -134,6 +138,13 @@ export async function runBeadsWorkflow(options: BeadsWorkflowOptions): Promise<B
             previousError: testResult.output.slice(0, 500),
           });
 
+          await notificationManager?.send({
+            title: "Task Failed",
+            body: `Tests failed for: ${task.title}`,
+            status: "error",
+            taskId: task.id,
+          });
+
           const noteResult = await addBeadNote(task.id, `Test failure (attempt ${(failureContext?.attempt ?? 0) + 1}):\n${testResult.output.slice(0, 200)}`);
           if (!noteResult.success) {
             logger.warn(`Failed to add note to task: ${noteResult.error?.message}`);
@@ -169,6 +180,13 @@ export async function runBeadsWorkflow(options: BeadsWorkflowOptions): Promise<B
       logger.success(`Task ${task.id} completed`);
       emitIterationEnd(iteration, "success", task.id);
 
+      await notificationManager?.send({
+        title: "Task Completed",
+        body: `Successfully completed: ${task.title}`,
+        status: "success",
+        taskId: task.id,
+      });
+
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       logger.error(`Task failed: ${errorMsg}`);
@@ -178,6 +196,13 @@ export async function runBeadsWorkflow(options: BeadsWorkflowOptions): Promise<B
         taskId: task.id,
         attempt: (failureContext?.attempt ?? 0) + 1,
         previousError: errorMsg,
+      });
+
+      await notificationManager?.send({
+        title: "Task Failed",
+        body: `Error in: ${task.title}\n${errorMsg.slice(0, 200)}`,
+        status: "error",
+        taskId: task.id,
       });
 
       const revertOnErrorResult = await updateBeadStatus(task.id, "open");

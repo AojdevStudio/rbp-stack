@@ -122,3 +122,11 @@ hooks:
     - "scripts/rbp/show-active-task.sh"
   pre_compact:
     - "scripts/rbp/save-progress-to-beads.sh"
+
+# Notifications configuration
+notifications:
+  # Discord webhook URL (or set RBP_DISCORD_WEBHOOK env var)
+  discord: ""  # e.g., "https://discord.com/api/webhooks/..."
+
+  # Slack webhook URL (or set RBP_SLACK_WEBHOOK env var)
+  slack: ""    # e.g., "https://hooks.slack.com/services/..."

@@ -1,9 +1,30 @@
 {
   "name": "rbp-stack",
-  "version": "3.0.0",
+  "version": "1.0.0",
+  "description": "Ralph + Beads + PAI - Autonomous task execution with test-gated verification",
   "type": "module",
+  "main": "lib/dist/index.js",
   "bin": {
-    "ralph": "./lib/src/index.ts"
+    "ralph": "./lib/dist/index.js"
+  },
+  "files": [
+    "lib/dist",
+    "scripts",
+    "templates",
+    "commands",
+    "ralph.sh"
+  ],
+  "keywords": [
+    "claude",
+    "ai",
+    "autonomous",
+    "execution",
+    "beads"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18",
+    "bun": ">=1.0"
   },
   "scripts": {
     "build": "bun build ./lib/src/index.ts --outdir ./lib/dist --target bun",

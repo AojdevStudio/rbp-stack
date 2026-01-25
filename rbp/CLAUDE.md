@@ -88,11 +88,19 @@ ralph --no-json-errors    # Output errors as human-readable text
 
 ### Commands
 
+**init**
+```bash
+ralph init                       # Initialize RBP config with auto-detection
+ralph init --dry-run             # Preview detected configuration
+ralph init --force               # Overwrite existing config
+```
+
 **run** (default)
 ```bash
 ralph run                        # Run the execution loop
 ralph run --bmad                 # Use BMAD workflow explicitly
 ralph run --beads                # Use Beads workflow explicitly
+ralph run --agent <provider>     # AI provider: claude, gemini, codex (default: claude)
 ralph run --max-iterations <n>   # Max iterations (positive integer >= 1)
 ralph run --dry-run              # Dry run mode (no changes)
 ```

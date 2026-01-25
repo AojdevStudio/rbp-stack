@@ -15,9 +15,11 @@ import { generateStoryCommandDef } from "./commands/generate-story";
 import { sequencerCommandDef } from "./commands/sequencer";
 import { hooksCommandDef } from "./commands/hooks";
 import { startCommandDef } from "./commands/start";
+import { initCommandDef } from "./commands/init";
 
 // Register all commands
 program.addCommand(runCommandDef, { isDefault: true });
+program.addCommand(initCommandDef);
 program.addCommand(startCommandDef);
 program.addCommand(statusCommandDef);
 program.addCommand(closeCommandDef);

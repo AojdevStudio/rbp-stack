@@ -2,10 +2,11 @@
 
 **Ralph + Beads + PAI: Autonomous Epic Implementation**
 
-Version: 2.0.0
-Status: Draft
+Version: 3.0.0
+Status: Production
 Author: JARVIS (PAI)
-Date: 2026-01-09
+Date: 2026-01-25
+Last Updated: 2026-01-25
 
 ---
 
@@ -14,10 +15,22 @@ Date: 2026-01-09
 The RBP Stack enables autonomous end-to-end Epic implementation by integrating three systems:
 
 - **Beads**: Source of truth state engine providing dynamic memory, task scheduling, and enforcement
-- **Ralph**: Iterative execution loop that queries Beads and drives continuous development
+- **Ralph**: TypeScript CLI execution engine (lib/src/cli.ts) that queries Beads and drives continuous development
 - **PAI**: Personal AI Infrastructure (unchanged, provides global identity)
 
 The stack augments existing BMAD workflows with Beads-first enforcement, ensuring agents complete all required actions with verified test results before tasks close.
+
+## Tech Stack
+
+- **Execution Engine:** TypeScript CLI (lib/src/cli.ts) using Commander.js
+- **Runtime:** Bun
+- **AI Execution:** Claude Code CLI (invoked as subprocess)
+- **State Management:** Beads (git-backed) - query `bd ready`, never mirror to JSON
+- **Testing:** bun test + Playwright
+- **Configuration:** Zod schema validation, YAML config files
+- **Logging:** Structured logger with levels (lib/src/observability/logger.ts)
+- **Error Handling:** Typed errors with ErrorCodes (lib/src/utils/errors.ts)
+- **Workflow Detection:** Automatic BMAD vs Beads detection (lib/src/utils/project-detector.ts)
 
 ---
 
@@ -105,10 +118,54 @@ Long-running tasks exhaust context windows, causing:
 1. **Beads is the source of truth** - Ralph queries Beads, not story files
 2. **PAI remains unchanged** - No modifications to global PAI configuration
 3. **BMAD workflows remain unchanged** - Use existing slash commands as-is
-4. **Test-gated closure** - `bd close` requires `bun test` to pass
+4. **Test-gated closure** - `ralph close` requires tests to pass (enforced in TypeScript)
 5. **Playwright-gated UI** - UI stories require Playwright verification
 6. **Failure state injection** - Previous attempt notes injected as context for retry attempts
 7. **No atomizer needed** - 200k context fits all stories, but use Execution Sequencer for large ones
+8. **Automatic workflow detection** - CLI detects BMAD vs Beads automatically (lib/src/utils/project-detector.ts)
+9. **TypeScript-first** - Core logic in TypeScript, bash scripts are wrappers only
+
+### Workflow Auto-Detection
+
+The Ralph CLI automatically detects which workflow to use (lib/src/utils/project-detector.ts):
+
+```typescript
+export function findProjectRoot(): string {
+  // Find project root by looking for package.json, .git, etc.
+  let current = process.cwd();
+  // ... (walks up directory tree)
+  return current;
+}
+
+export function findSprintStatusPath(projectRoot: string): string | null {
+  // Check common BMAD locations
+  const candidates = [
+    join(projectRoot, "docs/bmm/implementation-artifacts/sprint-status.yaml"),
+    join(projectRoot, "docs/sprint-status.yaml"),
+    // ...
+  ];
+  return candidates.find(existsSync) ?? null;
+}
+
+// In lib/src/commands/run.ts:
+if (options.bmad) {
+  workflow = "bmad";
+} else if (options.beads) {
+  workflow = "beads";
+} else {
+  // Auto-detect
+  const sprintStatusPath = findSprintStatusPath(projectRoot);
+  const beadsInstalled = await checkBeadsInstalled();
+
+  if (sprintStatusPath) {
+    workflow = "bmad";
+  } else if (beadsInstalled) {
+    workflow = "beads";
+  }
+}
+```
+
+This allows running `ralph run` without flags and having it "just work".
 
 ---
 
@@ -363,15 +420,25 @@ $task
 \`\`\`"
 ```
 
-### In close-with-proof.sh (lines 200-203)
+### Failure Note Injection (TypeScript Implementation)
 
-```bash
-else
-  # Append failure notes to bead for next iteration's context
-  TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
-  FAILURE_NOTE="FAILED: $TIMESTAMP\n$PROOF_SUMMARY"
-  bd update "$BEAD_ID" --note "$(echo -e "$FAILURE_NOTE")" 2>/dev/null || true
+When tests fail, the CLI appends failure notes to the bead (lib/src/commands/close.ts):
+
+```typescript
+if (!testResult.passed) {
+  // Append failure notes for next iteration's context
+  const timestamp = new Date().toISOString();
+  const failureNote = `FAILED: ${timestamp}\n${testResult.output}`;
+
+  await appendBeadNotes(beadId, failureNote);
+
+  exitWithError(createError(ErrorCodes.TEST_FAILURE, "Tests failed", {
+    suggestion: "Fix failing tests before closing the bead"
+  }));
+}
 ```
+
+The next iteration reads these notes via `bd show <id> --json` and injects them into the prompt context.
 
 ---
 
@@ -404,33 +471,51 @@ Task 3: AdminSidebar (9 subtasks total)
 
 ### Sequencer Logic
 
-```bash
-#!/usr/bin/env bash
-# scripts/rbp/sequencer.sh
-# Groups subtasks into execution phases
+The Execution Sequencer is implemented in TypeScript (lib/src/parsers/sequencer.ts):
 
-BEAD_ID=$1
-PHASE_SIZE=${2:-5}  # Default 5 subtasks per phase
+```typescript
+export interface ExecutionPhase {
+  phaseNumber: number;
+  subtasks: string[];  // Bead IDs
+  startIndex: number;
+  endIndex: number;
+}
 
-# Get subtask count
-SUBTASKS=$(bd show "$BEAD_ID" --json | jq -r '.subtasks | length')
+export function calculateExecutionPhases(
+  subtasks: string[],
+  phaseSize: number = 5
+): ExecutionPhase[] {
+  if (subtasks.length <= phaseSize) {
+    // Single phase
+    return [{
+      phaseNumber: 1,
+      subtasks: subtasks,
+      startIndex: 0,
+      endIndex: subtasks.length - 1,
+    }];
+  }
 
-if [ "$SUBTASKS" -le "$PHASE_SIZE" ]; then
-  echo "SINGLE_PHASE"
-  exit 0
-fi
+  // Multi-phase
+  const phases: ExecutionPhase[] = [];
+  const totalPhases = Math.ceil(subtasks.length / phaseSize);
 
-# Calculate phases
-PHASES=$(( (SUBTASKS + PHASE_SIZE - 1) / PHASE_SIZE ))
+  for (let i = 0; i < totalPhases; i++) {
+    const startIndex = i * phaseSize;
+    const endIndex = Math.min(startIndex + phaseSize - 1, subtasks.length - 1);
 
-echo "MULTI_PHASE:$PHASES"
-for i in $(seq 1 $PHASES); do
-  START=$(( (i - 1) * PHASE_SIZE + 1 ))
-  END=$(( i * PHASE_SIZE ))
-  [ $END -gt $SUBTASKS ] && END=$SUBTASKS
-  echo "PHASE_$i:$START-$END"
-done
+    phases.push({
+      phaseNumber: i + 1,
+      subtasks: subtasks.slice(startIndex, endIndex + 1),
+      startIndex,
+      endIndex,
+    });
+  }
+
+  return phases;
+}
 ```
+
+Configured via `config.execution.phase_size` (default: 5).
 
 ---
 
@@ -606,7 +691,7 @@ exec bun "$(dirname "$0")/lib/src/cli.ts" run "$@"
 
 ### promptv3.md (Agent Execution Protocol)
 
-Located at `scripts/promptv3.md`, the RBP Execution Protocol (v3.0) defines comprehensive execution guidance including:
+Located at `scripts/promptv3.md` (copied to project root during installation), the RBP Execution Protocol (v3.0) defines comprehensive execution guidance including:
 
 - Small changes philosophy (tracer bullets before full features)
 - Three execution phases: Exploration → Execution → Verification
@@ -852,41 +937,56 @@ All stories fit within 200k token budget. Use **Execution Sequencer** for large 
 
 ---
 
-## Initialization
+## Installation
 
 ### First-Time Setup
 
 ```bash
-# 1. Install BMAD (if not already)
-bunx bmad-method@alpha install
+# 1. Clone or download the RBP package
+git clone <rbp-repo-url> rbp
 
-# 2. Initialize Beads
+# 2. Install RBP into your project
+cd your-project
+../rbp/install.sh
+
+# This will:
+# - Copy lib/ directory (TypeScript CLI source)
+# - Copy scripts/ (promptv3.md, progress.txt)
+# - Copy commands/rbp/ (slash commands)
+# - Copy templates/ (settings.json, rbp-config.yaml)
+# - Create ralph.sh wrapper script
+# - Set up .claude/settings.json
+# - Initialize rbp-config.yaml
+
+# 3. Initialize Beads (if not already)
 bd init
 
-# 3. Create RBP scripts directory
-mkdir -p scripts/rbp
+# 4. Install dependencies
+bun install
 
-# 4. Copy RBP scripts (from this spec or template repo)
-# ralph.sh, promptv3.md, sequencer.sh, close-with-proof.sh, etc.
-
-# 5. Create project-level Claude settings
-mkdir -p .claude
-cat > .claude/settings.json << 'EOF'
-{
-  "hooks": {
-    "SessionStart": [
-      {"type": "command", "command": "bd prime 2>/dev/null || true"},
-      {"type": "command", "command": "scripts/rbp/show-active-task.sh"}
-    ]
-  }
-}
-EOF
-
-# 6. Install Playwright
+# 5. Install Playwright (if using UI tests)
 bunx playwright install
 
-# 7. Initialize progress file
-echo "# RBP Progress Log" > scripts/rbp/progress.txt
+# 6. Validate installation
+./validate.sh
+```
+
+### Configuration
+
+After installation, customize `rbp-config.yaml`:
+
+```yaml
+project:
+  name: "your-project"
+  description: "Your project description"
+
+# Adjust paths if needed
+paths:
+  stories: "docs/stories"  # Your story location
+
+# Configure verification commands
+verification:
+  test_command: "npm test"  # If not using bun
 ```
 
 ---
@@ -984,6 +1084,34 @@ watch -n 5 "bd list --json | jq '.[] | {id, title, status}'"
 ---
 
 ## Changelog
+
+### v3.0.0 (2026-01-25)
+
+- **BREAKING**: Complete TypeScript rewrite of Ralph CLI
+- **BREAKING**: File structure reorganized - lib/src/ is primary, not scripts/rbp/
+- **BREAKING**: Configuration moved to rbp-config.yaml with Zod schema validation
+- **BREAKING**: Commands moved from .claude/commands/rbp/ to commands/rbp/
+- **BREAKING**: Scripts moved from scripts/rbp/ to scripts/ (top-level)
+- Added: Commander.js-based CLI with structured commands (run, status, close, exec-spec)
+- Added: Comprehensive config schema (lib/src/config/schema.ts) with 9 sections
+- Added: Structured logging with levels (lib/src/observability/logger.ts)
+- Added: Typed error handling with ErrorCodes (lib/src/utils/errors.ts)
+- Added: Automatic workflow detection (BMAD vs Beads)
+- Added: TypeScript parsers for story/spec conversion (lib/src/parsers/)
+- Added: Beads CLI integration wrapper (lib/src/integrations/beads-cli.ts)
+- Added: Codex review workflow (lib/src/workflows/codex.ts)
+- Added: UI detection configuration (config.ui_detection)
+- Added: Quick-plan configuration (config.quick_plan)
+- Added: Observability configuration (config.observability)
+- Changed: ralph.sh is now a wrapper script, not the main loop
+- Changed: Test-gated closure implemented in TypeScript (lib/src/commands/close.ts)
+- Changed: Execution Sequencer implemented in TypeScript (lib/src/parsers/sequencer.ts)
+- Updated: Installation process copies entire lib/ directory
+- Updated: Validation checks TypeScript CLI installation
+- Maintained: promptv3.md agent protocol (XML InjectionContract)
+- Maintained: Beads as source of truth architecture
+- Maintained: Test-gated closure requirement
+- Maintained: Failure state injection mechanism
 
 ### v2.0.0 (2026-01-09)
 
