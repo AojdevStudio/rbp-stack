@@ -1,8 +1,8 @@
 # RBP Stack
 
-**Last Updated:** January 20, 2026
+**Last Updated:** January 25, 2026
 
-*For Claude Code only*: 
+*For Claude Code only*:
 
 <ToolPolicy xmlns:tool="urn:claude:tools"
             precedence="OVERRIDE_DEFAULT"
@@ -48,27 +48,48 @@ bd sync            # Sync with git
 ## Project Structure
 
 ```
-rbp/                    # Installable package (main deliverable)
-├── scripts/            # Core scripts (ralph.sh, close-with-proof.sh, etc.)
+rbp/                    # Installable npm package (main deliverable)
 ├── lib/src/            # TypeScript CLI source (commands, workflows, config)
-├── commands/rbp/       # Slash commands (/rbp:start, /rbp:status, /rbp:validate)
-├── templates/          # Config templates
-├── install.sh          # Installer
-└── validate.sh         # Validator
+├── scripts/            # Core bash scripts
+├── commands/rbp/       # Slash commands (/rbp:status, /rbp:validate)
+├── templates/          # Config templates, hooks, skills
+├── install.sh          # Legacy installer (deprecated - use npm)
+└── validate.sh         # Installation validator
 
-rbp/docs/               # Specification and diagrams
-marketing/              # Twitter thread, LinkedIn narrative
+rbp/docs/               # Comprehensive documentation
+specs/                  # Planning documents and checklists
+.github/workflows/      # CI/CD automation (release.yml)
 ```
 
-## Key Scripts
+## Tech Stack
 
-| Script | Purpose |
-|--------|---------|
-| `rbp/scripts/ralph.sh` | Main execution loop - queries `bd ready`, implements, closes |
-| `rbp/scripts/close-with-proof.sh` | Test-gated closure - runs tests before `bd close` |
-| `rbp/scripts/parse-story-to-beads.sh` | Converts BMAD story to Beads tasks |
-| `rbp/scripts/parse-spec-to-beads.sh` | Converts quick-plan spec to Beads tasks |
-| `rbp/scripts/ralph-execute.sh` | Quick-plan workflow with optional Codex review |
+- **Package:** npm package `rbp-stack` published to registry
+- **Execution:** Claude Code CLI
+- **CLI Engine:** TypeScript + Commander.js (bun runtime)
+- **State:** Beads (git-backed) - query `bd ready`, never mirror to JSON
+- **Testing:** bun test + Playwright
+- **Scripts:** Bash
+- **Runtime:** bun
+
+## Installation
+
+**Preferred (npm):**
+```bash
+# Install globally
+bun add -g rbp-stack
+
+# Or use directly without install
+bunx ralph init
+bunx ralph run
+bunx ralph status
+```
+
+**Legacy (install.sh):**
+```bash
+# Deprecated - use npm install instead
+./rbp/install.sh /path/to/project
+./rbp/validate.sh
+```
 
 ## TypeScript CLI (Ralph)
 
@@ -88,11 +109,19 @@ ralph --no-json-errors    # Output errors as human-readable text
 
 ### Commands
 
+**init**
+```bash
+ralph init                       # Initialize RBP config with auto-detection
+ralph init --dry-run             # Preview detected configuration
+ralph init --force               # Overwrite existing config
+```
+
 **run** (default)
 ```bash
 ralph run                        # Run the execution loop
 ralph run --bmad                 # Use BMAD workflow explicitly
 ralph run --beads                # Use Beads workflow explicitly
+ralph run --agent <provider>     # AI provider: claude, gemini, codex (default: claude)
 ralph run --max-iterations <n>   # Max iterations (positive integer >= 1)
 ralph run --dry-run              # Dry run mode (no changes)
 ```
@@ -116,15 +145,6 @@ ralph exec-spec <file> --skip-review     # Skip Codex review
 ralph exec-spec <file> --max-iterations <n>  # Max iterations
 ralph exec-spec <file> --dry-run  # Dry run mode
 ```
-
-## Tech Stack
-
-- **Execution:** Claude Code CLI
-- **CLI Engine:** TypeScript + Commander.js (bun runtime)
-- **State:** Beads (git-backed) - query `bd ready`, never mirror to JSON
-- **Testing:** bun test + Playwright
-- **Scripts:** Bash
-- **Runtime:** bun
 
 ## Rules
 
@@ -153,24 +173,39 @@ ralph exec-spec <file> --dry-run  # Dry run mode
 - Minimal - code should be self-documenting
 - Comment only: complex regex, non-obvious decisions, workarounds
 
-## Commands
+## Publishing to npm
+
+**Current Version:** 1.0.0
+**Package Name:** rbp-stack
+**Registry:** https://www.npmjs.com/package/rbp-stack
+
+### Version Bumping
 
 ```bash
-# Install RBP into a project
-./rbp/install.sh /path/to/project
+cd rbp
 
-# Validate installation
-./rbp/validate.sh
-
-# Run autonomous execution (TypeScript CLI)
-bun ./rbp/lib/src/cli.ts run
-
-# Or using installed script
-./rbp/scripts/ralph.sh
-
-# Parse story to beads
-./rbp/scripts/parse-story-to-beads.sh docs/stories/story-001.md
+# Bump version (updates package.json)
+npm version patch   # 1.0.0 -> 1.0.1
+npm version minor   # 1.0.0 -> 1.1.0
+npm version major   # 1.0.0 -> 2.0.0
 ```
+
+### Automated Releases
+
+Push a version tag to trigger automated npm publish via GitHub Actions:
+
+```bash
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+This runs `.github/workflows/release.yml` which:
+1. Builds the CLI with bun
+2. Runs tests
+3. Publishes to npm
+4. Creates a GitHub release
+
+**Setup:** Add `NPM_TOKEN` to GitHub secrets (Settings → Secrets → Actions)
 
 # Agent Instructions
 
